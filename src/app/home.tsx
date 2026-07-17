@@ -12,7 +12,7 @@ import {
 } from "react-native";
 
 import { describeExpectedVsActual, evaluateATR } from "../engine/atrEngine";
-import type { ATRInterpretation } from "../model/athletedata/atr";
+import type { ATRInterpretation, MicrocycleType } from "../model/athletedata/atr";
 import {
   emptyHealthBaseline,
   type HealthBaseline,
@@ -21,11 +21,9 @@ import {
 import type { SubjectiveMetrics } from "../model/athletedata/subjective";
 import type { TrainingLoad } from "../model/athletedata/training";
 import {
-  getCoachMetrics,
+  getDailyHistory,
   getHealthBaseline,
-  getHealthSnapshot,
-  getSubjectiveMetrics,
-  getTrainingLoad,
+  saveDailyRecord,
 } from "../repository/metricsRepository";
 import { getAthleteProfile } from "../services/storage";
 
@@ -54,6 +52,7 @@ export default function HomeScreen() {
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any | null>(null);
+  const [activeMicrocycle, setActiveMicrocycle] = useState<string>("");
 
   const [healthBaseline, setHealthBaseline] = useState<HealthBaseline>(emptyHealthBaseline);
   const [healthSnapshot, setHealthSnapshot] = useState<HealthSnapshot>({});
@@ -77,25 +76,18 @@ export default function HomeScreen() {
           return;
         }
 
-        const [
-          storedBaseline,
-          storedSnapshot,
-          storedSubjective,
-          storedTraining,
-          storedCoach,
-        ] = await Promise.all([
-          getHealthBaseline(),
-          getHealthSnapshot(),
-          getSubjectiveMetrics(),
-          getTrainingLoad(),
-          getCoachMetrics(),
+        const [storedBaseline, history] = await Promise.all([
+          getHealthBaseline(storedProfile.id),
+          getDailyHistory(storedProfile.id),
         ]);
 
+        const latestRecord = history.length > 0 ? history[history.length - 1] : null;
+
         const nextBaseline = storedBaseline ?? emptyHealthBaseline;
-        const nextSnapshot = storedSnapshot ?? {};
-        const nextSubjective = storedSubjective ?? {};
-        const nextTraining = storedTraining ?? {};
-        const nextCoach = storedCoach ?? null;
+        const nextSnapshot = latestRecord?.health ?? {};
+        const nextSubjective = latestRecord?.subjective ?? {};
+        const nextTraining = latestRecord?.training ?? {};
+        const nextCoach = latestRecord?.coach ?? null;
 
         setProfile(storedProfile);
         setHealthBaseline(nextBaseline);
@@ -104,18 +96,29 @@ export default function HomeScreen() {
         setTraining(nextTraining);
         setCoach(nextCoach);
 
-        const microcycle = getMicrocycleFromProfile(storedProfile);
+        const microcycle = latestRecord?.microcycle || getMicrocycleFromProfile(storedProfile);
+        setActiveMicrocycle(microcycle);
 
         const nextAtr = evaluateATR({
-          microcycle: microcycle as any,
+          microcycle: microcycle as MicrocycleType | "",
           baseline: nextBaseline,
           health: nextSnapshot,
           subjective: nextSubjective,
           training: nextTraining,
           coach: nextCoach ?? undefined,
+          history,
         });
 
         setAtr(nextAtr);
+
+        if (latestRecord) {
+          await saveDailyRecord({
+            ...latestRecord,
+            atrState: nextAtr.state,
+            dissonanceLabel: nextAtr.dissonanceLabel,
+            divergenceFcHrv: nextAtr.physiological?.divergenceFcHrv,
+          });
+        }
       } catch (error) {
         console.error("Error cargando datos de Home:", error);
       } finally {
@@ -155,19 +158,18 @@ export default function HomeScreen() {
   );
 
   const atrSummary = useMemo(() => {
-    const microcycle = getMicrocycleFromProfile(profile);
     const expectedVsActual = describeExpectedVsActual(
-      microcycle as any,
+      activeMicrocycle as MicrocycleType,
       healthBaseline,
       healthSnapshot,
       training
     );
 
     return {
-      microcycle: formatMicrocycle(microcycle),
+      microcycle: formatMicrocycle(activeMicrocycle),
       expectedVsActual,
     };
-  }, [profile, healthBaseline, healthSnapshot, training]);
+  }, [activeMicrocycle, healthBaseline, healthSnapshot, training]);
 
   if (loading) {
     return (
@@ -235,6 +237,39 @@ export default function HomeScreen() {
               Sin alertas por el momento.
             </Text>
           )}
+
+          {atr.dissonanceLabel ? (
+            <>
+              <View style={styles.atrSpacer} />
+              <Text style={styles.label}>Cruce fisiológico × subjetivo</Text>
+              <Text style={styles.hint}>{atr.dissonanceLabel}</Text>
+            </>
+          ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>NIVEL 2 — vs. microciclo anterior</Text>
+          {atr.level2?.evaluated ? (
+            <>
+              <Text style={styles.value}>
+                {atr.level2.occurredAsExpected ? "Evolución esperada" : "Evolución no ocurrió"}
+              </Text>
+              <Text style={styles.hint}>{atr.level2.note}</Text>
+            </>
+          ) : (
+            <Text style={styles.hint}>
+              {atr.level2?.note ?? "Sin datos suficientes todavía."}
+            </Text>
+          )}
+
+          <View style={styles.atrSpacer} />
+
+          <Text style={styles.label}>NIVEL 3 — histórico multi-temporada</Text>
+          <Text style={styles.hint}>
+            {atr.level3
+              ? `${atr.level3.note} (${atr.level3.completedMacrocycles}/${atr.level3.minimumRequired} macrociclos)`
+              : "Sin evaluar."}
+          </Text>
         </View>
 
         <View style={styles.card}>

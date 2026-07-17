@@ -1,16 +1,5 @@
 import { emptyAthleteProfile, type AthleteProfile } from "./athlete";
-import { emptyDailyMetrics, type DailyMetrics } from "./dailyMetrics";
+import { type DailyRecord } from "./dailyRecord";
 
-export interface AppDataModel {
-  athlete: AthleteProfile;
-  dailyMetrics: DailyMetrics;
-}
-
-export const emptyAppDataModel: AppDataModel = {
-  athlete: emptyAthleteProfile,
-  dailyMetrics: emptyDailyMetrics,
-};
-
-export { emptyAthleteProfile, emptyDailyMetrics };
-export type { AthleteProfile, DailyMetrics };
-
+export { emptyAthleteProfile };
+export type { AthleteProfile, DailyRecord };

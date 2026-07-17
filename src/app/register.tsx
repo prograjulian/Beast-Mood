@@ -14,7 +14,7 @@ import {
     View,
 } from "react-native";
 
-import { type DailyMetrics } from "../model/athletedata/dailyMetrics";
+import { type DailyRecord } from "../model/athletedata/dailyRecord";
 import {
     emptyHealthBaseline,
     type HealthBaseline,
@@ -24,11 +24,9 @@ import { type SubjectiveMetrics } from "../model/athletedata/subjective";
 import { calculateInternalLoad, type TrainingLoad } from "../model/athletedata/training";
 import {
     getHealthBaseline,
-    getHealthSnapshot,
-    saveDailyMetrics,
+    getLiveHealthSnapshot,
+    saveDailyRecord,
     saveHealthBaseline,
-    saveSubjectiveMetrics,
-    saveTrainingLoad,
 } from "../repository/metricsRepository";
 import { getAthleteProfile, saveAthleteProfile } from "../services/storage";
 
@@ -250,8 +248,8 @@ export default function RegisterScreen() {
         }
 
         const [storedBaseline, storedSnapshot] = await Promise.all([
-          getHealthBaseline(),
-          getHealthSnapshot(),
+          getHealthBaseline(profile.id),
+          getLiveHealthSnapshot(profile.id),
         ]);
 
         if (storedBaseline) setHealthBaseline(storedBaseline);
@@ -312,33 +310,24 @@ export default function RegisterScreen() {
       internalLoad,
     };
 
-    const nextDaily: DailyMetrics = {
+    const nextRecord: DailyRecord = {
       date: now.slice(0, 10),
-      restingHeartRate: healthSnapshot.restingHeartRate,
-      hrv: healthSnapshot.hrv,
-      sleepHours: healthSnapshot.sleepHours,
-      activityMinutes: healthSnapshot.activityMinutes,
-      trainingLoad: internalLoad,
-      borg: borgCR10,
-      mood: motivation,
-      soreness: musclePain,
-      motivation,
-      technicalQuality: techniqueQuality,
-      speed: speedReaction,
-      explosiveness,
-      legFeeling,
+      athleteId: profile.id,
+      microcycle: selectedMicrocycle,
+      health: healthSnapshot,
+      subjective: nextSubjective,
+      training: nextTraining,
       notes: notes.trim() || undefined,
+      savedAt: now,
     };
 
     await Promise.all([
-      saveSubjectiveMetrics(nextSubjective),
-      saveTrainingLoad(nextTraining),
-      saveDailyMetrics(nextDaily),
+      saveDailyRecord(nextRecord),
       saveAthleteProfile({
         ...profile,
         currentMicrocycle: selectedMicrocycle,
       } as any),
-      healthBaseline ? saveHealthBaseline(healthBaseline) : Promise.resolve(),
+      healthBaseline ? saveHealthBaseline(profile.id, healthBaseline) : Promise.resolve(),
     ]);
 
     Alert.alert("Guardado", "Los datos quedaron registrados correctamente.", [
