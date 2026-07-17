@@ -559,7 +559,7 @@ function evaluateTransition(
       occurredAsExpected,
       note: occurredAsExpected
         ? "Aparecen señales del pico esperado hacia Competitivo."
-        : "No aparecen todavía las señales del pico esperado; el motor de Nivel 1 (sección 1.6) es quien decide si hay Supercompensación.",
+        : "No aparecen todavía las señales del pico esperado hacia Competitivo; probablemente no se alcanzó la adaptación buscada en Activación (Supercompensación en sí la sigue decidiendo el Nivel 1 con su regla de coherencia, sección 1.6).",
     };
   }
 
@@ -683,6 +683,12 @@ function mapDissonanceToState(
     case "Disonancia inversa":
       return "Fatiga funcional";
     case "Dentro de lo esperado":
+      // En Carga/Impacto, "dentro del rango esperado" ES la zona de fatiga
+      // funcional por diseño (Motor ATR §1.2/§1.3) — no es un estado neutro
+      // como en el resto de microciclos.
+      return microcycle === "Carga" || microcycle === "Impacto"
+        ? "Fatiga funcional"
+        : "Recuperacion adecuada";
     case "Mas fresco de lo esperado":
       return "Recuperacion adecuada";
     default:

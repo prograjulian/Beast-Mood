@@ -77,8 +77,36 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-16 — construidos Niveles 2/3 del motor ATR sobre el historial
-> real (ver entrada de sesión abajo). Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+> Última actualización: 2026-07-16 — test suite en Jest para el motor ATR (ver entrada de sesión
+> abajo). Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+
+- [x] **Resuelto — test suite en Jest para `atrEngine.ts` (34 tests, todos pasando).**
+      Se instaló `jest` + `ts-jest` + `@types/jest` como devDependencies. `jest.config.js` usa
+      `tsconfig.jest.json` (extiende el tsconfig principal, agrega `types: ["jest"]` y ajusta
+      `rootDir`/`include` a `src/**/*.ts`). El tsconfig principal ahora excluye `**/*.test.ts`
+      (Expo no necesita compilar los tests, y sin esa exclusión `npx tsc --noEmit` fallaba
+      porque no reconocía los globals de Jest). Nuevo script `npm test`. Cobertura en
+      `src/engine/atrEngine.test.ts`: Capa 1 (incluye tests de regresión específicos para el bug
+      de divergencia FC/HRV encontrado la sesión anterior), Capa 2 (dominancia de dolor/fatiga,
+      umbrales de rendimiento por microciclo), Capa 3 + Nivel 1 (los 5 estados oficiales, incluida
+      Supercompensación con y sin coherencia multivariable), Nivel 2 (las 5 transiciones, con
+      casos de "ocurrió"/"no ocurrió", bloque anterior ausente, y salto de microciclo sin regla
+      documentada), Nivel 3 (el gate de historial insuficiente, incluido el conteo correcto de
+      macrociclos completos), `describeExpectedVsActual`, y casos borde (sin microciclo, sin
+      baseline).
+      **Segundo bug real encontrado (esta vez escribiendo los tests, antes de correrlos):** en
+      Carga/Impacto, cuando FC y HRV caían *dentro* del rango esperado (que ya es la zona de
+      fatiga funcional por diseño, Motor ATR §1.2/§1.3) con subjetivo coherente, el motor
+      devolvía "Recuperación adecuada" en vez de "Fatiga funcional" — `mapDissonanceToState`
+      trataba la etiqueta genérica "Dentro de lo esperado" de la Capa 3 igual en todos los
+      microciclos, sin considerar que en Carga/Impacto esa etiqueta específicamente significa
+      fatiga funcional, no neutralidad. Corregido con un caso especial para esos dos microciclos;
+      hay un test de regresión (`"Carga dentro del rango esperado... -> Fatiga funcional"`) que
+      lo fija. **Tercer ajuste (no bug, aclaración):** el texto de la nota de Nivel 2 para
+      Activación→Competitivo insinuaba que esa transición no afectaba el estado final: sí lo
+      afecta (puede promover a "Preparación insuficiente", igual que las demás transiciones,
+      correcto según la definición general de §0.1) — solo Supercompensación en sí la sigue
+      decidiendo el Nivel 1. Se reescribió el texto para no ser engañoso.
 
 - [x] **Resuelto — Capas 1–3 del motor (§2–4), Nivel 2 (§5.2) y estados oficiales (§0.1).**
       `atr.ts`: `ATRState` ahora son los 5 estados oficiales del documento (`Recuperacion
@@ -249,6 +277,18 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   --noEmit` pasa limpio. Próximo paso sugerido: decidir entre (a) implementar Apple Health, o
   (b) escribir un test suite real (Jest) para el motor ATR — hoy solo hay verificación manual ad
   hoc, no cubierta por CI ni reproducible sin repetir los pasos de esta sesión.
+- **2026-07-16** — Se eligió (b). Se agregó Jest (`jest` + `ts-jest` + `@types/jest`,
+  `jest.config.js`, `tsconfig.jest.json`, script `npm test`) y `src/engine/atrEngine.test.ts` con
+  34 tests cubriendo Capas 1–3, Nivel 1, Nivel 2 y Nivel 3 (detalle completo en sección 4).
+  Escribir los tests encontró un segundo bug real (además del de divergencia FC/HRV de la sesión
+  anterior): en Carga/Impacto, "dentro del rango esperado" se mapeaba a "Recuperación adecuada"
+  en vez de "Fatiga funcional". Corregido antes de que los tests se escribieran en verde, con un
+  test de regresión que lo cubre. `npm test` (34/34) y `npx tsc --noEmit` (app y jest tsconfig)
+  pasan limpio. Cambios sin commitear todavía al cierre de esta sesión — próximo paso sugerido:
+  revisar el diff, commitear/pushear, y luego decidir entre Apple Health o seguir avanzando en el
+  motor (IRL, Índice de Evolución ATR, Perfil Competitivo Individual — todos bloqueados por falta
+  de macrociclos completos reales, así que probablemente Apple Health es el desbloqueador más
+  productivo ahora).
 
 ---
 
