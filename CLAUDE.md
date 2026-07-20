@@ -77,8 +77,10 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-16 — test suite en Jest para el motor ATR (ver entrada de sesión
-> abajo). Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+> Última actualización: 2026-07-20 — reglas de ingeniería/CI/subagentes integradas (ver sección 10
+> y la entrada de sesión 2026-07-20 en sección 6); no hubo cambios de lógica ATR esta sesión, el
+> estado del motor sigue siendo el descrito abajo desde el 2026-07-16. Repo ya en GitHub:
+> https://github.com/prograjulian/Beast-Mood
 
 - [x] **Resuelto — test suite en Jest para `atrEngine.ts` (34 tests, todos pasando).**
       Se instaló `jest` + `ts-jest` + `@types/jest` como devDependencies. `jest.config.js` usa
@@ -289,6 +291,29 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   motor (IRL, Índice de Evolución ATR, Perfil Competitivo Individual — todos bloqueados por falta
   de macrociclos completos reales, así que probablemente Apple Health es el desbloqueador más
   productivo ahora).
+- **2026-07-20** — Se integraron al proyecto las reglas de ingeniería de una plantilla base
+  genérica (Python/Django-oriented), adaptadas a este stack (React Native + Expo + TypeScript, sin
+  backend propio todavía) — detalle completo en la nueva sección 10. Resumen: se agregó ESLint
+  (`eslint-config-expo` 56.0.4, `eslint.config.js` — no estaba instalado, `npm run lint` fallaba
+  antes de esta sesión; corre limpio con 0 errores, 7 warnings preexistentes sin tocar), CI en
+  GitHub Actions (`.github/workflows/ci.yml`: lint + `tsc --noEmit` + Jest + `gitleaks` +
+  `npm audit`, corre en cada push a `main`), y cinco subagentes en `.claude/agents/` adaptados al
+  dominio del proyecto (`code-reviewer` con criterios específicos de fidelidad a la lógica
+  deportiva CLAUDE.md §1/§2, `data-schema-reviewer` — nuevo, equivalente al revisor de migraciones
+  de la plantilla pero para cambios a modelos ya persistidos en `AsyncStorage`/Firestore,
+  `doc-updater`, `test-writer`, `release-manager`). Se agregaron `docs/git-workflow.md`,
+  `docs/security-checklist.md`, `docs/environments.md`, `docs/error-monitoring.md` y
+  `docs/definition-of-done.md`, todos adaptados (no copiados) al estado real del proyecto. Decisión
+  explícita del usuario, confirmada antes de implementar: seguir trabajando directo sobre `main`
+  (sin rama `dev`/PR) mientras el proyecto sea single-user, con el subagente `code-reviewer` como
+  gate de calidad invocado proactivamente por Claude Code (sin requerir aprobación manual del
+  usuario en cada cambio) y el CI como red de seguridad independiente que no depende de que nadie
+  se acuerde de invocar nada. Pre-commit hooks locales quedaron diferidos (no hay `pre-commit`ni
+  `gitleaks` instalados localmente) — el escaneo de secretos corre solo en CI por ahora. No se
+  adoptaron `docs/django.md`/`flask.md`/`fastapi.md`/`decision-framework.md`/`automation.md` de la
+  plantilla base — no aplican a este stack, ver el cierre de la sección 10 para el detalle de qué
+  se dejó fuera y por qué. `npm run lint`, `npx tsc --noEmit` (app y jest), y `npm test` (34/34)
+  verificados limpios tras los cambios. Cambios sin commitear todavía al cierre de esta sesión.
 
 ---
 
@@ -329,3 +354,74 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 Ante cualquier duda o contradicción entre este archivo y los documentos fuente, **los
 documentos fuente ganan** — este archivo es un resumen operativo, no la especificación completa.
+
+---
+
+## 10. Reglas de ingeniería, calidad y seguridad (no negociables)
+
+> Adaptadas de una plantilla base genérica (pensada para proyectos Python/Django/FastAPI) al
+> stack real de este proyecto (React Native + Expo + TypeScript, sin backend propio todavía).
+> No se copió la plantilla completa — ver "Qué NO se adoptó" al final de esta sección.
+
+1. **Nunca fallar en silencio.** Todo error se captura y se loguea con contexto suficiente para
+   depurar sin reproducir el problema a mano (qué se intentaba hacer, con qué datos). Nunca
+   `catch {}` vacío. Notificación activa de errores en producción queda diferida hasta que haya
+   usuarios reales más allá del desarrollador — ver `docs/error-monitoring.md`.
+2. **Nunca hardcodear secretos.** Config sensible (claves de Firebase cuando existan, etc.) vía
+   variables de entorno + `.env.example` con placeholders. `.env` nunca se commitea (ver
+   `.gitignore`). Ver `docs/security-checklist.md`.
+3. **El servidor es la fuente de verdad, nunca el cliente** — regla que hoy es en gran parte N/A
+   (no hay backend propio, todo vive en `AsyncStorage` local) pero rige desde el día uno de
+   Firebase: ningún dato sensible o decisión de permisos se valida solo en el cliente.
+4. **Separación estricta de entornos** desde que exista Firebase — desarrollo local nunca apunta
+   al proyecto de producción. Ver `docs/environments.md` (hoy documentado como diferido, no
+   implementado).
+5. **Modo plan antes de ejecutar** en cualquier tarea no trivial, y especialmente antes de
+   cambios que toquen datos ya persistidos de un atleta. Para cambios a la forma de un dato ya
+   guardado (`DailyRecord`, `HealthBaseline`, etc.), usar siempre el subagente
+   `data-schema-reviewer`.
+6. **Nada se da por "terminado" sin pasar por el subagente `code-reviewer`.** El proyecto trabaja
+   directo sobre `main` (excepción documentada explícitamente, ver `docs/git-workflow.md` — no es
+   un descuido, es la decisión tomada el 2026-07-20 mientras el proyecto sea single-user). El
+   filtro real de calidad son dos capas independientes de un PR humano: el subagente
+   `code-reviewer` (invocado proactivamente antes de cerrar cualquier cambio no trivial) y el CI
+   en GitHub Actions (`.github/workflows/ci.yml`, corre solo en cada push a `main`: lint,
+   type-check, tests, `gitleaks`, `npm audit`).
+7. **Pruebas obligatorias en rutas críticas** — el motor ATR y los repositorios de persistencia,
+   ante todo (lo que si falla le cuesta al atleta una interpretación equivocada de su propio
+   estado). Estándar: Jest (`ts-jest`), ya configurado. Hábito: tests pasando primero, prueba
+   manual en la app después — nunca al revés (ver `docs/definition-of-done.md`, y CLAUDE.md §4/§6
+   para los dos bugs reales que este orden ya atrapó).
+8. **Lint y tipos.** `npm run lint` (ESLint vía `eslint-config-expo`, configurado en
+   `eslint.config.js`) sin errores. `npx tsc --noEmit` limpio, tanto para el tsconfig de la app
+   como para `tsconfig.jest.json` si se tocaron tests.
+9. **Antes de dar algo por "terminado"**, revisar `docs/definition-of-done.md`. Checklist de
+   seguridad específico en `docs/security-checklist.md`.
+
+### Subagentes disponibles (`.claude/agents/`)
+
+- `code-reviewer` — el gate de calidad/seguridad/fidelidad a la lógica ATR antes de cerrar
+  cualquier cambio no trivial. Invocarlo proactivamente, sin esperar a que se pida.
+- `data-schema-reviewer` — equivalente al revisor de migraciones de la plantilla base, adaptado a
+  que este proyecto no tiene SQL: revisa cambios a modelos ya persistidos en `AsyncStorage` (y
+  Firestore cuando exista) antes de aplicarlos.
+- `doc-updater` — propone (nunca escribe directo) actualizaciones a README/CLAUDE.md/docs después
+  de que un cambio ya pasó por `code-reviewer`.
+- `test-writer` — escribe/actualiza tests de Jest para código ya aprobado, sin tocar lógica de
+  negocio.
+- `release-manager` — changelog + versión semántica cuando se corte un release (no atado a un
+  merge `dev`→`main`, ya que no existe ese flujo hoy).
+
+### Qué NO se adoptó de la plantilla base, y por qué
+
+- **Flujo `dev` + PR real**: diferido mientras el proyecto sea single-user — ver punto 6 arriba y
+  `docs/git-workflow.md` para cuándo reconsiderarlo.
+- **Pre-commit hooks locales** (`gitleaks` + linter en cada `git commit`): diferido, no hay
+  `pre-commit`/`gitleaks` instalados localmente. El escaneo de secretos sí corre en CI. Instrucciones
+  para activarlo más tarde en `docs/security-checklist.md`.
+- **`docs/django.md` / `flask.md` / `fastapi.md` / `decision-framework.md`**: no aplican, este
+  proyecto no es un backend Python y el stack ya está decidido (React Native + Expo, CLAUDE.md §3).
+- **`docs/automation.md`**: no aplica todavía, no hay scripts/automatizaciones desatendidas en el
+  proyecto. Si en algún momento se agrega una (ej. un cron de sincronización con Apple Health),
+  retomar el patrón de esa sección de la plantilla (manejo de errores con notificación activa,
+  reintentos con backoff, idempotencia).

@@ -37,9 +37,18 @@ This command will move the starter code to the **app-example** directory and cre
 
 ### Other setup steps
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
+- ESLint is already configured (`eslint.config.js`, `eslint-config-expo`) — run `npm run lint`.
+- Unit tests use Jest + ts-jest, already configured — run `npm test`.
+- Type-check with `npx tsc --noEmit` (and `npx tsc --noEmit -p tsconfig.jest.json` for test files).
 - Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+
+## Development workflow
+
+Project-specific rules (git flow, code review gate, security checklist,
+definition of done) live in [`CLAUDE.md`](./CLAUDE.md) and [`docs/`](./docs).
+Read `CLAUDE.md` before proposing schema/endpoint/screen changes — it's the
+persistent memory of this project's sports-domain logic and engineering
+conventions.
 
 ## Learn more
 
