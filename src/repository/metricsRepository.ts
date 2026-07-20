@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { CoachMetrics } from "../model/athletedata/coach";
 import type { DailyRecord } from "../model/athletedata/dailyRecord";
 import type { HealthBaseline, HealthSnapshot } from "../model/athletedata/health";
 

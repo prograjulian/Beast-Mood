@@ -267,7 +267,6 @@ function buildMicrocycleAlerts(
 ): string[] {
   const alerts: string[] = [];
   const fcRange = getFcTargetRange(microcycle);
-  const hrvRange = getHrvTargetRange(microcycle);
   const borgRange = getBorgExpectedRange(microcycle);
 
   if (isNumber(sleepHours) && sleepHours < 7) {

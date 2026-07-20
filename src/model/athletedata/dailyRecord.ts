@@ -1,6 +1,5 @@
-import type { ATRState } from "./atr";
+import type { ATRState , MicrocycleType } from "./atr";
 import type { CoachMetrics } from "./coach";
-import type { MicrocycleType } from "./atr";
 import type { HealthSnapshot } from "./health";
 import type { SubjectiveMetrics } from "./subjective";
 import type { TrainingLoad } from "./training";

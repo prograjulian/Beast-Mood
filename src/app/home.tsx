@@ -32,12 +32,6 @@ function formatNumber(value?: number, suffix = ""): string {
   return `${value}${suffix}`;
 }
 
-function formatPercent(value?: number): string {
-  if (typeof value !== "number" || Number.isNaN(value)) return "--";
-  const rounded = Math.round(value * 10) / 10;
-  return `${rounded > 0 ? "+" : ""}${rounded}%`;
-}
-
 function formatMicrocycle(value?: string): string {
   if (!value) return "Pendiente";
   return value;

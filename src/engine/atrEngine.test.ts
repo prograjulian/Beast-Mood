@@ -1,8 +1,7 @@
 import { describeExpectedVsActual, evaluateATR } from "./atrEngine";
 import type { MicrocycleType } from "../model/athletedata/atr";
 import type { DailyRecord } from "../model/athletedata/dailyRecord";
-import type { HealthBaseline } from "../model/athletedata/health";
-import type { HealthSnapshot } from "../model/athletedata/health";
+import type { HealthBaseline , HealthSnapshot } from "../model/athletedata/health";
 import type { SubjectiveMetrics } from "../model/athletedata/subjective";
 import type { TrainingLoad } from "../model/athletedata/training";
 
