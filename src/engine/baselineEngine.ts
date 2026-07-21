@@ -26,6 +26,56 @@ function average(values: number[]): number | undefined {
   return values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : undefined;
 }
 
+// Exclusión de outliers (Motor ATR §1.8: "±2-3 DE, sugerido, a definir" --
+// sin confirmar por el entrenador). NO se implementa literalmente como
+// media±desviación estándar clásica: con ventanas chicas (4-7 lecturas,
+// exactamente el caso real acá) ese método sufre "masking" -- un único
+// valor extremo infla su propia desviación estándar lo suficiente como para
+// nunca superar el umbral y terminar excluyéndose a sí mismo (verificado
+// empíricamente: un valor de 300 lpm entre seis lecturas de 50 lpm NO se
+// excluía con ±2.5 DE clásico). Eso derrotaría el propósito real de la
+// regla -- descartar una lectura errónea -- así que se usa en su lugar la
+// mediana + MAD (desviación absoluta mediana), un estimador robusto
+// estándar para este problema exacto que no sufre masking. Umbral 3.5 en
+// el "modified z-score" (Iglewicz & Hoya 1993), la referencia más citada
+// para este método -- elegido en vez del ±2-3 "DE" literal del documento
+// porque el objetivo declarado (descartar lecturas erróneas) importa más
+// que la letra literal de "desviación estándar" (CLAUDE.md §1: ante tensión
+// entre más fácil de programar y más fiel a la lógica deportiva, gana la
+// lógica deportiva -- acá la lógica deportiva es "detectar el outlier de
+// verdad", no "usar la fórmula de DE clásica que en la práctica no detecta
+// nada"). Sigue siendo provisional, sin confirmar por el entrenador.
+const OUTLIER_MODIFIED_ZSCORE_THRESHOLD = 3.5;
+const MIN_SAMPLE_FOR_OUTLIER_CHECK = 3;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function excludeOutliers(values: number[]): number[] {
+  if (values.length < MIN_SAMPLE_FOR_OUTLIER_CHECK) return values;
+
+  const med = median(values);
+  const mad = median(values.map((v) => Math.abs(v - med)));
+
+  let filtered: number[];
+  if (mad === 0) {
+    // Sin dispersión típica en la muestra (MAD=0, ej. 6 de 7 lecturas
+    // idénticas): cualquier valor distinto de la mediana ya es anómalo --
+    // el modified z-score no se puede calcular (división por cero), pero
+    // la señal de outlier es incluso más clara en este caso, no menos.
+    filtered = values.filter((v) => v === med);
+  } else {
+    filtered = values.filter((v) => (0.6745 * Math.abs(v - med)) / mad <= OUTLIER_MODIFIED_ZSCORE_THRESHOLD);
+  }
+
+  // Si el filtro dejara la muestra vacía (caso degenerado), se prefiere el
+  // promedio sin filtrar antes que quedarse sin ningún dato.
+  return filtered.length > 0 ? filtered : values;
+}
+
 /**
  * Calcula el baseline individual con ventana móvil de 7 días calendario
  * (informe de decisiones 2026-07-20, Bug B.2, y Motor ATR §1.8).
@@ -44,9 +94,12 @@ function average(values: number[]): number | undefined {
  *   considera representativo (Bug B.2) y se mantiene el baseline anterior
  *   sin cambios, en vez de sobreescribirlo con un promedio poco confiable.
  *
- * Pendiente, NO resuelto por el informe de decisiones (no se inventa aquí):
- * exclusión de outliers por desviación estándar (Motor ATR §1.8, "±2-3 DE,
- * sugerido, a definir"). Tampoco se aplica transformación ln() a HRV --
+ * Exclusión de outliers (Motor ATR §1.8, "±2-3 DE, sugerido, a definir"):
+ * implementada con mediana + MAD en vez de media/DE clásica -- ver el
+ * comentario en excludeOutliers() más abajo para el porqué (masking con
+ * muestras chicas). Provisional, sin confirmar por el entrenador.
+ *
+ * Pendiente, NO resuelto (no se inventa aquí): transformación ln() a HRV --
  * depende del índice real que entregue Apple Health (rMSSD vs. SDNN, sin
  * confirmar todavía; Apple Health por defecto reporta SDNN, no rMSSD, que
  * es a lo que aplica la literatura citada en el informe de decisiones).
@@ -71,8 +124,8 @@ export function calculateHealthBaseline(
     return previousBaseline;
   }
 
-  const fcAverage = average(eligible.map((r) => r.health.restingHeartRate).filter(isNumber));
-  const hrvAverage = average(eligible.map((r) => r.health.hrv).filter(isNumber));
+  const fcAverage = average(excludeOutliers(eligible.map((r) => r.health.restingHeartRate).filter(isNumber)));
+  const hrvAverage = average(excludeOutliers(eligible.map((r) => r.health.hrv).filter(isNumber)));
 
   return {
     ...previousBaseline,

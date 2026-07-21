@@ -334,9 +334,21 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
    (`coach.technique`) puede *reforzar* (escalar Fatiga funcional → Fatiga excesiva), nunca
    *anular* una lectura mejor. No se generalizó al resto de observaciones del entrenador.
 6. ~~Tamaño exacto de ventana móvil del baseline~~ **resuelto el 2026-07-20** (Bug B.2: 7 días
-   calendario, mínimo 4 lecturas válidas — ver `src/engine/baselineEngine.ts`). El **umbral de
-   exclusión de outliers (±2–3 desviaciones estándar, Motor ATR §1.8) sigue sin resolver** — no
-   implementado, no inventado.
+   calendario, mínimo 4 lecturas válidas — ver `src/engine/baselineEngine.ts`). **Exclusión de
+   outliers implementada el 2026-07-21 (`excludeOutliers` en `baselineEngine.ts`) -- PERO con una
+   desviación deliberada del texto literal del documento que necesita confirmación explícita del
+   entrenador, señalada activamente en vez de aprobada en silencio (CLAUDE.md §2):** el documento
+   pide "±2-3 desviaciones estándar", pero esa fórmula clásica (media ± DE) sufre "masking" con
+   ventanas tan chicas como las de este proyecto (4-7 lecturas) — un único valor claramente erróneo
+   infla su propia desviación estándar lo suficiente como para nunca superar el umbral, y termina
+   NO excluyéndose (verificado empíricamente antes de implementar: una lectura de 300 lpm entre seis
+   lecturas de 50 lpm no se excluía con ±2.5 DE). Se implementó en su lugar mediana + MAD (desviación
+   absoluta mediana, umbral 3.5 en el "modified z-score" de Iglewicz & Hoya 1993), un método
+   robusto estándar para exactamente este problema, que sí detecta el caso de prueba. Es una
+   decisión técnica para cumplir la INTENCIÓN de la regla (descartar una lectura errónea) cuando la
+   fórmula literal no la cumple en la práctica -- pero cambia el método, no solo el número, así que
+   se marca explícitamente pendiente de que el entrenador la confirme o pida la fórmula clásica de
+   todas formas.
 7. Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual
    (Motor ATR sección 13) tome precedencia sobre el perfil genérico (propuesta a validar: 3–5 podios).
 8. ~~Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
@@ -727,6 +739,25 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   `npx tsc --noEmit`, `npm run lint`, `npm test` (96/96) limpios. Próximo paso sugerido: decidir
   entre Apple Health, Perfil Competitivo Individual, backend/proxy de IA (desbloquea "Entrenador
   IA"), o construir la separación REAL de Dashboard Atleta/Entrenador (más allá del toggle actual).
+- **2026-07-21 (sexta ronda, mismo día)** — Continuando sin pausas: se implementó la exclusión de
+  outliers del baseline (Motor ATR §1.8, sección 5 punto 6, el único pendiente que quedaba de la
+  ventana móvil del baseline). Al implementar la fórmula literal del documento (media ± 2.5
+  desviaciones estándar) se encontró, verificando empíricamente antes de darla por buena, que sufre
+  "masking" con las ventanas chicas reales del proyecto (4-7 lecturas): un valor de prueba
+  claramente erróneo (300 lpm entre seis lecturas de 50 lpm) NO se excluía, porque el outlier infla
+  su propia desviación estándar lo suficiente como para nunca superar el umbral — la fórmula
+  clásica falla exactamente el caso que está diseñada para atrapar. Se implementó en su lugar
+  mediana + MAD (desviación absoluta mediana, "modified z-score" de Iglewicz & Hoya 1993, umbral
+  3.5), un método robusto estándar para este problema específico, verificado con el mismo caso de
+  prueba (sí lo excluye) y con casos de ruido biológico normal (no excluye variación legítima).
+  Señalado explícitamente como una desviación del texto literal del documento que necesita
+  confirmación del entrenador (CLAUDE.md §2, rol de guardián de la lógica deportiva — no se aprobó
+  en silencio), documentado en el código y en sección 5 punto 6. 7 tests nuevos en
+  `baselineEngine.test.ts` (outlier claro excluido, ruido normal sin falsos positivos). 98/98 tests
+  totales, `tsc`/`eslint` limpios. Próximo paso sugerido: igual que la ronda anterior (Apple Health,
+  Perfil Competitivo Individual, backend/proxy de IA, o separación real de dashboards) — el
+  proyecto ya no tiene pendientes triviales sueltos, lo que queda son piezas grandes que requieren
+  o bien infraestructura externa (Apple Health, Firebase) o bien confirmación del entrenador.
 
 ---
 

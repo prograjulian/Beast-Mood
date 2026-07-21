@@ -72,6 +72,66 @@ describe("calculateHealthBaseline", () => {
     expect(result).toBe(previousBaseline);
   });
 
+  test("un valor muy alejado del resto (outlier, Motor ATR §1.8) se excluye del promedio", () => {
+    const history: DailyRecord[] = [
+      mkRecord("2026-01-03", "Ajuste", 50, 100),
+      mkRecord("2026-01-04", "Ajuste", 50, 100),
+      mkRecord("2026-01-05", "Ajuste", 50, 100),
+      mkRecord("2026-01-06", "Ajuste", 50, 100),
+      mkRecord("2026-01-07", "Ajuste", 50, 100),
+      mkRecord("2026-01-08", "Ajuste", 50, 100),
+      // Lectura claramente atípica (ej. error de medición) -- no debería
+      // arrastrar el promedio.
+      mkRecord("2026-01-09", "Ajuste", 300, 100),
+    ];
+
+    const result = calculateHealthBaseline(history, "2026-01-10", previousBaseline);
+    expect(result.restingHeartRate).toBeCloseTo(50, 5);
+  });
+
+  test("MAD=0 (mayoría de lecturas idénticas): el valor distinto se excluye por igualdad, no por z-score", () => {
+    // 5 de 6 lecturas idénticas -> MAD=0, la rama sin división ("cualquier
+    // valor distinto de la mediana es anómalo").
+    const history: DailyRecord[] = [
+      mkRecord("2026-01-04", "Ajuste", 50, 100),
+      mkRecord("2026-01-05", "Ajuste", 50, 100),
+      mkRecord("2026-01-06", "Ajuste", 50, 100),
+      mkRecord("2026-01-07", "Ajuste", 50, 100),
+      mkRecord("2026-01-08", "Ajuste", 65, 100), // única distinta
+    ];
+
+    const result = calculateHealthBaseline(history, "2026-01-10", previousBaseline);
+    expect(result.restingHeartRate).toBeCloseTo(50, 5);
+  });
+
+  test("outlier solo en FC, HRV sin outlier -> cada variable se filtra de forma independiente", () => {
+    const history: DailyRecord[] = [
+      mkRecord("2026-01-04", "Ajuste", 50, 98),
+      mkRecord("2026-01-05", "Ajuste", 50, 100),
+      mkRecord("2026-01-06", "Ajuste", 50, 102),
+      mkRecord("2026-01-07", "Ajuste", 50, 100),
+      // FC atípica ese día, HRV normal -- no deberían contaminarse entre sí.
+      mkRecord("2026-01-08", "Ajuste", 300, 101),
+    ];
+
+    const result = calculateHealthBaseline(history, "2026-01-10", previousBaseline);
+    expect(result.restingHeartRate).toBeCloseTo(50, 5);
+    expect(result.hrv).toBeCloseTo(100.2, 5);
+  });
+
+  test("valores parejos sin outliers -> no se descarta nada", () => {
+    const history: DailyRecord[] = [
+      mkRecord("2026-01-05", "Ajuste", 48, 98),
+      mkRecord("2026-01-06", "Ajuste", 50, 100),
+      mkRecord("2026-01-07", "Ajuste", 52, 102),
+      mkRecord("2026-01-08", "Ajuste", 50, 100),
+    ];
+
+    const result = calculateHealthBaseline(history, "2026-01-10", previousBaseline);
+    expect(result.restingHeartRate).toBeCloseTo(50, 5);
+    expect(result.hrv).toBeCloseTo(100, 5);
+  });
+
   test("un día sin lectura matutina no entra al promedio, no se busca sustituto", () => {
     const history: DailyRecord[] = [
       mkRecord("2026-01-04", "Ajuste", 50, 100),
