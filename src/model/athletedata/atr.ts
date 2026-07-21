@@ -71,6 +71,31 @@ export interface PostWorkoutTrendResult {
   note: string;
 }
 
+/**
+ * "Listo para competir" (informe de decisiones 2026-07-21, formaliza
+ * Preguntas Estructurales §1) -- veredicto DISTINTO de Supercompensación:
+ * umbral mínimo aceptable para competir sin riesgo, no el pico fisiológico
+ * ideal. Todo atleta supercompensado está listo; no todo atleta listo está
+ * supercompensado. Solo se evalúa en el microciclo Competitivo.
+ * Visibilidad exclusiva del entrenador (decisión de producto: efecto
+ * nocebo documentado en atletas que reciben señales negativas de wearables
+ * antes de competir) -- ver home.tsx.
+ */
+export interface ReadinessEvaluation {
+  status: "ready" | "not_ready" | "not_evaluable";
+  blockedBy: string[];
+  failedMandatory: string[];
+  missingMandatory: string[];
+  supportingConcerns: string[];
+}
+
+/**
+ * Índice de Confianza del Análisis (CLAUDE.md §5, ya propuesto, ahora
+ * implementado como versión provisional razonable -- los umbrales exactos
+ * de completitud de datos no están confirmados por el entrenador).
+ */
+export type ConfidenceLevel = "Alta" | "Media" | "Baja";
+
 export interface ATRInterpretation {
   state: ATRState;
   message?: string;
@@ -83,6 +108,8 @@ export interface ATRInterpretation {
   level3?: Level3Result;
   postWorkoutObservation?: PostWorkoutObservation;
   postWorkoutTrend?: PostWorkoutTrendResult;
+  competitionReadiness?: ReadinessEvaluation;
+  confidenceLevel?: ConfidenceLevel;
 }
 
 export interface ATRInput {

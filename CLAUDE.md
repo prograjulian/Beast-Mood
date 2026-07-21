@@ -77,12 +77,31 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-21 — 5 bugs + 1 métrica nueva del motor ATR resueltos según informe
-> de decisiones del entrenador (ver entrada de sesión 2026-07-21 en sección 6 para el detalle
-> completo). Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+> Última actualización: 2026-07-21 — segunda ronda de decisiones del entrenador el mismo día:
+> "Listo para competir" (estado nuevo, distinto de Supercompensación), Índice de Confianza del
+> Análisis, motor de explicación generalizado (paso determinístico) y disonancia texto-vs-número
+> del comentario libre. Ver las dos entradas de sesión 2026-07-21 en sección 6 para el detalle
+> completo. Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
 
-- [x] **Resuelto — informe de decisiones del entrenador 2026-07-21: 5 bugs + 1 métrica nueva.**
-      Ver la entrada de sesión 2026-07-21 (sección 6) para el detalle completo de cada uno. Resumen:
+- [x] **Resuelto — segunda ronda de decisiones 2026-07-21: "Listo para competir", Índice de
+      Confianza, motor de explicación, disonancia texto-vs-número.** Ver la segunda entrada de
+      sesión 2026-07-21 (sección 6) para el detalle completo. Resumen: nuevo veredicto "Listo para
+      competir" (`evaluateCompetitionReadiness` en `atrEngine.ts`, expuesto como
+      `ATRInterpretation.competitionReadiness`) — distinto de Supercompensación, umbral mínimo
+      para competir, visible solo en `home.tsx` (decisión de producto: nunca al atleta, efecto
+      nocebo documentado). `computeConfidenceLevel` implementa el Índice de Confianza
+      (Alta/Media/Baja) que CLAUDE.md §5 ya tenía pre-aprobado como no-bloqueante. Nuevo
+      `src/engine/explanationEngine.ts`: tabla fija estado→acción y `buildExplanationPayload`,
+      el paso 1 (determinístico) del motor de explicación generalizado — el paso 2 (redacción con
+      la API de OpenAI) queda explícitamente sin implementar, decisión explícita del usuario
+      (no hay backend/proxy hoy que no exponga la API key en el cliente, CLAUDE.md §10).
+      `detectFreeTextDissonance` detecta palabras clave de dolor en `subjective.athleteNotes`
+      (campo que ya existía) contra los valores numéricos — mismo mecanismo que la divergencia
+      FC/HRV, nunca mueve `state`. 76/76 tests (19 nuevos), `tsc`/`eslint` limpios.
+
+- [x] **Resuelto — informe de decisiones del entrenador 2026-07-21 (primera ronda): 5 bugs + 1
+      métrica nueva.**
+      Ver la primera entrada de sesión 2026-07-21 (sección 6) para el detalle completo de cada uno. Resumen:
       (A) `isExcessiveFatigue` ya no usa umbrales fijos, usa los mismos rangos+tolerancia por
       microciclo que Capa 1 — restringido a Carga/Impacto a propósito (generalizarlo a los 6
       microciclos rompía Recuperación→Activación, ver el comentario en el código). (B) Modelo de
@@ -215,13 +234,17 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       Coherente con el roadmap declarado (System Prompt §4/§6: Apple Health → BD → historial →
       dashboard → IA), no es un desvío, solo el siguiente paso pendiente.
 - [x] `athleteRepository.ts` también vacío (0 líneas).
-- [ ] No hay separación Dashboard Atleta / Dashboard Entrenador (Documento Maestro §6):
-      `home.tsx` es una única pantalla que muestra HRV/FC crudos y alertas técnicas a cualquiera
-      que la abra — funciona como vista de entrenador mostrada por defecto, sin la vista
-      minimalista de atleta que pide §6.1.
+- [ ] **No hay separación Dashboard Atleta / Dashboard Entrenador (Documento Maestro §6) — ahora
+      con una consecuencia concreta, no solo de UX.** `home.tsx` es una única pantalla que muestra
+      HRV/FC crudos, alertas técnicas y, desde el 2026-07-21, el veredicto "Listo para competir"
+      a cualquiera que la abra. Ese veredicto está explícitamente decidido como exclusivo del
+      entrenador (efecto nocebo documentado, ver sección 6). Mientras no exista la vista de atleta
+      separada, construir esa vista DEBE excluir la card "Listo para competir" — quedó comentado
+      así en el código (`home.tsx`), pero es una regla real pendiente de aplicar, no un detalle
+      cosmético.
 - [ ] `CoachMetrics` existe como modelo (guardado/leído) pero ninguna pantalla lo captura todavía.
-- [ ] No existe "procedencia del dato" (medido/reportado/ausente) ni Índice de Confianza del
-      Análisis (CLAUDE.md §5, ya propuestos pero no codificados).
+- [ ] No existe "procedencia del dato" (medido/reportado/ausente). ~~Índice de Confianza del
+      Análisis~~ **implementado el 2026-07-21**, ver sección 5.
 - [ ] No hay mensaje de arranque en frío ("Recolectando datos para dar un análisis concreto",
       §1.8) cuando falta baseline — la UI solo deja `expectedVsActualReady` en `false` sin
       mostrar ese mensaje específico.
@@ -234,10 +257,15 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 ## 5. Decisiones pendientes (resumen vivo — fuente completa: `Beast_Mood_Preguntas_Estructurales.md`)
 
 ### Requieren al entrenador (NO inventar, preguntar):
-1. Variables obligatorias vs. de apoyo para declarar "listo para competir" en general — **el
-   informe de decisiones 2026-07-20 resolvió esto solo para Supercompensación específicamente**
-   (Bug D: 4 obligatorias — FC, HRV, piernas, Borg — + 3 de apoyo — explosividad, velocidad/
-   reacción, motivación), como precedente, no como respuesta general todavía.
+1. ~~Variables obligatorias vs. de apoyo para declarar "listo para competir" en general~~
+   **resuelto el 2026-07-21** — estado nuevo "Listo para competir" (`evaluateCompetitionReadiness`
+   en `atrEngine.ts`), distinto de Supercompensación: 4 obligatorias (FC, HRV, piernas ≥6, técnica
+   ≥6 como piso individual) + veto total por dolor/fatiga/molestia ≥8 + 4 de apoyo (explosividad,
+   velocidad/reacción, confianza, motivación). El umbral de 6 para las variables de apoyo de este
+   veredicto específico (`READINESS_SUPPORTING_THRESHOLD`) es una elección provisional propia, no
+   confirmada por el entrenador — el informe de decisiones no dio ese número. El precedente previo
+   (Bug D, Supercompensación: 4 obligatorias — FC, HRV, piernas, Borg — + 3 de apoyo) sigue vigente
+   como un veredicto aparte, más exigente.
 2. Jerarquía/peso de cada variable (¿pesa más HRV, técnica, explosividad, dolor?) — **parcialmente
    resuelto para técnica** (Bug C, ver punto 5 abajo), sigue abierto para el resto.
 3. Lista de variables "bloqueadoras" que nunca deben compensarse (ej. dolor 8/10 con todo lo
@@ -267,15 +295,59 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     Apple Health reporta SDNN por defecto, distinto del rMSSD al que aplica la literatura citada
     en el informe de decisiones 2026-07-20 para el promedio móvil con ln-transform). No se fuerza
     ninguna transformación todavía porque no se sabe qué índice va a llegar.
+12. Diseño del backend/proxy para la capa de redacción con IA del motor de explicación (informe de
+    decisiones 2026-07-21) — el paso determinístico ya está implementado
+    (`src/engine/explanationEngine.ts`), pero llamar a la API de OpenAI directo desde la app
+    expondría la API key en el cliente (CLAUDE.md §10: nunca hardcodear secretos). Necesita un
+    backend/Cloud Function que no exista todavía (Firebase solo "previsto", §3). Decisión explícita
+    del usuario 2026-07-21: no implementar esa llamada hasta que exista ese proxy.
+13. **Decisiones de Frontend/UX (informe de decisiones 2026-07-21, a partir de un mockup) —
+    RECIBIDAS, GUARDADAS PARA IMPLEMENTAR MÁS ADELANTE, NADA DE ESTO ESTÁ CODIFICADO TODAVÍA**
+    (a diferencia del resto de esta sesión — el usuario pidió explícitamente guardar esto para
+    retomarlo después, no implementarlo ahora):
+    - **Eliminar cualquier score único tipo "Readiness 87/100".** Contradice el principio
+      fundacional del proyecto (nunca reducir el estado a un número genérico tipo Whoop). El
+      estado se comunica siempre por los 6 estados oficiales (o "no evaluable"), nunca como score
+      aislado. (Verificado el 2026-07-21: hoy no existe ningún score de ese tipo en el código —
+      esta regla es preventiva, para no introducir uno por accidente más adelante.)
+    - **Comparación de dos niveles, no uno:** primaria (decide el color/estado — contra baseline
+      individual + tolerancia del microciclo, ya implementada) y secundaria (contexto de
+      tendencia, sin semáforo propio — delta "vs. día anterior", informativo, nunca decide el
+      estado por sí solo). La secundaria NO está implementada.
+    - **Estructura drill-down:** pantalla principal = resumen (estado + variables más relevantes);
+      el resto se despliega al entrar al detalle. Excepción: dolor sube automáticamente a la vista
+      principal si está elevado ese día, aunque el resto de variables secundarias estén en el
+      drill-down — es la única variable con poder de veto visual, no puede quedar enterrada un día
+      crítico. NO implementado (`home.tsx` hoy muestra todo sin jerarquía de resumen/detalle).
+    - **Escala de Borg — usar las descripciones verbales oficiales de Borg CR-10, no categorías
+      simplificadas inventadas:** 0 Nada en absoluto, 1 Muy muy leve, 2 Leve, 3 Moderado, 4 Algo
+      intenso, 5 Intenso, 7 Muy intenso, 9 Muy muy intenso, 10 Máximo esfuerzo (6 y 8 se omiten a
+      propósito, son los anclajes verbales oficiales de la escala). El atleta selecciona por
+      descripción, el sistema guarda el número real (0–10) para no perder resolución en
+      `calculateInternalLoad`. NO implementado — `register.tsx` (`BORG_OPTIONS`) hoy usa una
+      escala simplificada propia (2/3/5/7/9/10, sin 0/1/4), distinta de esta.
+    - **"Subcompensado" descartado** — no se agrega como estado nuevo. Se mantiene solo
+      "Preparación insuficiente" (que ya cubre "recuperación insuficiente") tal como estaba. No
+      requiere acción de código, es una confirmación de que NO hay que agregar nada.
+    - **"Sensación general" / "percepción de recuperación" (mockup) = variables ya existentes**
+      (piernas/ánimo/sueño) con otro nombre visual — no crear campos nuevos duplicados en el
+      modelo de datos. No requiere acción de código todavía, es una restricción a respetar cuando
+      se construya esa parte de la UI.
+    - **Pendiente de confirmar con el usuario:** qué es exactamente la pestaña "Entrenador IA" en
+      la navegación del atleta. Asunción de trabajo hasta nueva indicación: chat de IA para
+      consultas generales del atleta, sin acceso al veredicto "listo/no listo para competir"
+      (exclusivo del entrenador, ver punto 1 arriba).
 
 ### Ya tienen propuesta inicial (arquitectura, se puede avanzar sin bloquear):
-- Índice de Confianza del Análisis (Alta/Media/Baja según variables disponibles).
+- ~~Índice de Confianza del Análisis (Alta/Media/Baja según variables disponibles)~~ **implementado
+  el 2026-07-21** (`computeConfidenceLevel` en `atrEngine.ts`, versión provisional razonable — los
+  umbrales exactos de completitud de datos no están confirmados por el entrenador).
 - Procedencia del dato (medido / reportado / ausente / no aplica).
 - Prioridad de alertas simultáneas (propuesta: seguridad del atleta primero, luego preparación
   competitiva, luego recuperación/carga general).
-- Motor de explicación en lenguaje natural (plantilla: "[Estado] porque [variables con valores
-  reales vs. esperados]. Esta respuesta [coincide/no coincide] con el perfil esperado para
-  [microciclo] [+ tendencia si aplica]").
+- ~~Motor de explicación en lenguaje natural~~ **paso determinístico implementado el 2026-07-21**
+  (`src/engine/explanationEngine.ts`: tabla fija estado→acción + `buildExplanationPayload`) — la
+  redacción en lenguaje natural en sí (paso 2, con IA) sigue sin implementar, ver punto 12 arriba.
 - Fórmula exacta del Índice de Evolución ATR: propuesta inicial dada (sección 5.5 del Motor
   ATR), no validada — granularidad confirmada: por macrociclo completo.
 
@@ -431,7 +503,51 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   implementar Apple Health (para dejar de depender de captura manual, y para poder confirmar el
   índice real de HRV pendiente arriba) o seguir cerrando huecos de sección 5 (IRL, Perfil
   Competitivo Individual, generalizar el modelo obligatorias/de-apoyo del Bug D a "listo para
-  competir" en general).
+  competir" en general). Commiteado y pusheado (`2c4aaa2`); commit de seguimiento `f910775`
+  corrige una vulnerabilidad alta (`shell-quote`, vía `react-devtools-core`) que CI encontró en
+  `npm audit` — sin relación con los cambios de esta sesión, `npm audit fix` sin breaking changes.
+- **2026-07-21 (segunda ronda, mismo día)** — El usuario volvió con una segunda tanda de
+  decisiones del entrenador: la misma métrica de recuperación post-entreno (ya implementada en la
+  ronda anterior, reconfirmada sin cambios) más cuatro piezas nuevas que no estaban en el informe
+  original. Todo implementado y verificado (76/76 tests, 19 nuevos; `tsc`/`eslint` limpios):
+  - **Estado "Listo para competir"** (formaliza Preguntas Estructurales §1, resuelve el punto 1 de
+    sección 5): distinto de Supercompensación — umbral mínimo para competir sin riesgo, no el pico
+    ideal. `evaluateCompetitionReadiness` en `atrEngine.ts`, mismo patrón obligatorias/bloqueadoras/
+    de-apoyo que Bug D: 4 obligatorias (FC dentro del rango de Competitivo §1.6, HRV +5%/+20%,
+    piernas ≥6, técnica ≥6 como **piso individual** — a propósito distinto del promedio ponderado
+    de Capa 2, para no dejar que un 5/10 aislado en técnica se compense con el resto, que era
+    justo el caso sin resolver de Preguntas Estructurales §1); veto total por dolor/fatiga/
+    molestia ≥8; 4 de apoyo (explosividad, velocidad/reacción, motivación, y "confianza" —
+    mapeada a `coach.confidence` porque `SubjectiveMetrics` no tiene un campo de autoreporte de
+    confianza del atleta, mapeo señalado explícitamente en el código). **Decisión de producto
+    (usuario, confirmada antes de implementar):** visible solo en `home.tsx` (que ya funciona como
+    vista de entrenador por defecto) — nunca al atleta, por el efecto nocebo documentado en
+    atletas que reciben señales negativas de wearables antes de competir. Queda comentado en el
+    código que esta card debe excluirse cuando se construya la vista de atleta separada (gap ya
+    documentado en sección 4).
+  - **Índice de Confianza del Análisis** (Alta/Media/Baja): `computeConfidenceLevel`, resuelve el
+    punto que CLAUDE.md §5 ya tenía pre-aprobado como "se puede avanzar sin bloquear". Versión
+    provisional razonable basada en completitud de baseline/lectura del día/subjetivo/Borg — los
+    umbrales exactos no están confirmados por el entrenador.
+  - **Motor de explicación generalizado — solo el paso 1 (determinístico).** Nuevo
+    `src/engine/explanationEngine.ts`: tabla fija de acciones por defecto por resultado (Dentro de
+    lo esperado, Fatiga funcional/excesiva, Estimulación insuficiente, Supercompensado, Listo/No
+    listo para competir, etc.) y `buildExplanationPayload`, que arma el contrato de datos completo
+    (variables responsables — reusa las alertas ya calculadas, nunca inventa una lista nueva —,
+    tendencia, índice de confianza, resumen de "listo para competir") listo para un paso 2 que
+    redactaría el texto con la API de OpenAI. **Decisión explícita del usuario, confirmada antes
+    de implementar: NO se wireó la llamada a OpenAI.** Hacerlo hoy expondría la API key en el
+    bundle del cliente (no hay backend/proxy — Firebase solo "previsto", CLAUDE.md §3), justo lo
+    que CLAUDE.md §10 prohíbe. Queda como decisión de arquitectura pendiente (sección 5, punto 12).
+  - **Disonancia texto-vs-número del comentario libre del atleta:** `detectFreeTextDissonance` en
+    `atrEngine.ts` (el campo `subjective.athleteNotes` ya existía, no fue necesario agregarlo).
+    Detección simple por palabras clave (dolor, duele, molestia, lesión, incomod) contra
+    `musclePain`/`discomfort` bajos — mismo mecanismo que la divergencia FC/HRV, agrega una alerta
+    al array `alerts`, nunca mueve `state`. A propósito sin análisis de sentimiento, para mantener
+    el mecanismo trazable (regla explícita del informe de decisiones).
+  Próximo paso sugerido: revisar con el entrenador, commitear/pushear. Después: decidir el diseño
+  del backend/proxy para el paso 2 del motor de explicación (bloquea la redacción con IA), o seguir
+  con Apple Health / IRL / Perfil Competitivo Individual como en la ronda anterior.
 
 ---
 

@@ -435,6 +435,179 @@ describe("Capa 3 + Nivel 1 — estados finales por microciclo", () => {
   });
 });
 
+describe('"Listo para competir" (informe de decisiones 2026-07-21)', () => {
+  const readyHealth = { restingHeartRate: pct(50, -3), hrv: pct(100, 12) };
+
+  test("las 4 obligatorias OK, sin bloqueadoras -> listo, sin advertencias si las de apoyo también están altas", () => {
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: readyHealth,
+      subjective: { legFeeling: 8, techniqueQuality: 8, explosiveness: 8, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+    });
+    expect(result.competitionReadiness?.status).toBe("ready");
+    expect(result.competitionReadiness?.supportingConcerns).toHaveLength(0);
+  });
+
+  test("obligatorias OK pero una de apoyo baja -> sigue listo, con la advertencia explícita", () => {
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: readyHealth,
+      subjective: { legFeeling: 6, techniqueQuality: 6, explosiveness: 2, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+    });
+    expect(result.competitionReadiness?.status).toBe("ready");
+    expect(result.competitionReadiness?.supportingConcerns.some((c) => c.includes("Explosividad"))).toBe(true);
+  });
+
+  test("técnica en 5 (piso individual, aunque el promedio de Capa 2 esté bien) -> NO listo", () => {
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: readyHealth,
+      subjective: {
+        legFeeling: 9,
+        techniqueQuality: 5, // por debajo del piso de 6, aunque el resto compense el promedio
+        explosiveness: 9,
+        speedReaction: 9,
+        overallPerformance: 9,
+        strikingPower: 9,
+        easeOfExit: 9,
+        motivation: 8,
+      },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+    });
+    expect(result.competitionReadiness?.status).toBe("not_ready");
+    expect(result.competitionReadiness?.failedMandatory.some((f) => f.includes("Técnica"))).toBe(true);
+  });
+
+  test("dolor ≥8 bloquea el veredicto aunque todo lo demás esté perfecto", () => {
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: readyHealth,
+      subjective: {
+        legFeeling: 9,
+        techniqueQuality: 9,
+        explosiveness: 9,
+        speedReaction: 9,
+        motivation: 9,
+        musclePain: 8,
+      },
+      training: { borgCR10: 2 },
+      coach: { confidence: 9 },
+    });
+    expect(result.competitionReadiness?.status).toBe("not_ready");
+    expect(result.competitionReadiness?.blockedBy.some((b) => b.includes("Dolor"))).toBe(true);
+  });
+
+  test("falta un dato obligatorio (piernas) -> no evaluable, no 'no listo' silencioso", () => {
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: readyHealth,
+      subjective: { techniqueQuality: 8, explosiveness: 8, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+    });
+    expect(result.competitionReadiness?.status).toBe("not_evaluable");
+    expect(result.competitionReadiness?.missingMandatory.some((m) => m.includes("Piernas"))).toBe(true);
+  });
+
+  test("fuera de Competitivo -> no se evalúa (undefined)", () => {
+    const result = evaluateATR({
+      microcycle: "Carga",
+      baseline,
+      health: { restingHeartRate: pct(50, 17), hrv: pct(100, -25) },
+      subjective: { legFeeling: 8, techniqueQuality: 8 },
+      training: { borgCR10: 6 },
+    });
+    expect(result.competitionReadiness).toBeUndefined();
+  });
+});
+
+describe("Índice de Confianza del Análisis", () => {
+  test("sin baseline -> Baja", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline: {},
+      health: { restingHeartRate: 55, hrv: 90 },
+      subjective: { legFeeling: 5 },
+      training: { borgCR10: 3 },
+    });
+    expect(result.confidenceLevel).toBe("Baja");
+  });
+
+  test("baseline + lectura de hoy + subjetivo casi completo + borg -> Alta", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: { restingHeartRate: pct(50, 10), hrv: pct(100, -7) },
+      subjective: {
+        fatigue: 5,
+        musclePain: 2,
+        stress: 3,
+        motivation: 7,
+        discomfort: 1,
+        overallPerformance: 6,
+      },
+      training: { borgCR10: 3 },
+    });
+    expect(result.confidenceLevel).toBe("Alta");
+  });
+
+  test("baseline + solo HRV de hoy (sin FC) y poco subjetivo -> Media", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: { hrv: pct(100, -7) },
+      subjective: { legFeeling: 5 },
+      training: {},
+    });
+    expect(result.confidenceLevel).toBe("Media");
+  });
+});
+
+describe("Disonancia texto-vs-número (comentario libre del atleta)", () => {
+  test("comentario menciona dolor pero el valor numérico es bajo -> alerta de disonancia", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: { restingHeartRate: pct(50, 10), hrv: pct(100, -7) },
+      subjective: { legFeeling: 5, musclePain: 2, athleteNotes: "me duele un poco la rodilla" },
+      training: { borgCR10: 3 },
+    });
+    expect(result.alerts.some((a) => a.includes("Disonancia texto-vs-número"))).toBe(true);
+  });
+
+  test("comentario menciona dolor y el valor numérico también es alto -> sin disonancia (coinciden)", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: { restingHeartRate: pct(50, 10), hrv: pct(100, -7) },
+      subjective: { legFeeling: 5, musclePain: 8, athleteNotes: "me duele bastante la rodilla" },
+      training: { borgCR10: 3 },
+    });
+    expect(result.alerts.some((a) => a.includes("Disonancia texto-vs-número"))).toBe(false);
+  });
+
+  test("comentario sin palabras clave -> sin disonancia", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: { restingHeartRate: pct(50, 10), hrv: pct(100, -7) },
+      subjective: { legFeeling: 5, musclePain: 1, athleteNotes: "me sentí bien hoy" },
+      training: { borgCR10: 3 },
+    });
+    expect(result.alerts.some((a) => a.includes("Disonancia texto-vs-número"))).toBe(false);
+  });
+});
+
 describe("Nivel 2 — comparación con el microciclo anterior", () => {
   test("Ajuste -> Carga sin cambio real: no evaluado como esperado", () => {
     const history: DailyRecord[] = [

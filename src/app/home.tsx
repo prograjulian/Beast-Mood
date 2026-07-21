@@ -228,6 +228,11 @@ export default function HomeScreen() {
           <Text style={styles.label}>ATR</Text>
           <Text style={styles.value}>{atr.state}</Text>
           <Text style={styles.hint}>{atr.message}</Text>
+          {atr.confidenceLevel ? (
+            <Text style={[styles.hint, { marginTop: 4 }]}>
+              Confianza del análisis: {atr.confidenceLevel}
+            </Text>
+          ) : null}
 
           <View style={styles.atrSpacer} />
 
@@ -282,6 +287,49 @@ export default function HomeScreen() {
               : "Sin evaluar."}
           </Text>
         </View>
+
+        {/*
+          "Listo para competir" -- SOLO microciclo Competitivo (informe de
+          decisiones 2026-07-21). Decisión de producto: visibilidad EXCLUSIVA
+          del entrenador (efecto nocebo documentado en atletas que reciben
+          señales negativas de wearables antes de competir). home.tsx hoy
+          funciona como vista de entrenador por defecto (CLAUDE.md §4, no
+          existe todavía la vista minimalista de atleta) -- cuando se
+          construya esa separación, esta card debe quedar EXCLUIDA de la
+          pantalla del atleta.
+        */}
+        {atr.competitionReadiness ? (
+          <View style={styles.card}>
+            <Text style={styles.label}>LISTO PARA COMPETIR (solo entrenador)</Text>
+            <Text style={styles.value}>
+              {atr.competitionReadiness.status === "ready"
+                ? "Listo"
+                : atr.competitionReadiness.status === "not_ready"
+                  ? "No listo"
+                  : "No evaluable"}
+            </Text>
+            {atr.competitionReadiness.blockedBy.length > 0 ? (
+              <Text style={styles.hint}>
+                Bloqueado por: {atr.competitionReadiness.blockedBy.join(", ")}
+              </Text>
+            ) : null}
+            {atr.competitionReadiness.failedMandatory.length > 0 ? (
+              <Text style={styles.hint}>
+                No cumple: {atr.competitionReadiness.failedMandatory.join(", ")}
+              </Text>
+            ) : null}
+            {atr.competitionReadiness.missingMandatory.length > 0 ? (
+              <Text style={styles.hint}>
+                Falta dato obligatorio: {atr.competitionReadiness.missingMandatory.join(", ")}
+              </Text>
+            ) : null}
+            {atr.competitionReadiness.supportingConcerns.length > 0 ? (
+              <Text style={[styles.hint, { marginTop: 8 }]}>
+                Puntos de atención: {atr.competitionReadiness.supportingConcerns.join(", ")}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.label}>SUBJETIVO</Text>

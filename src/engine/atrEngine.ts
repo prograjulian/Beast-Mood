@@ -2,13 +2,16 @@ import type {
   ATRInput,
   ATRInterpretation,
   ATRState,
+  ConfidenceLevel,
   Level2Result,
   Level3Result,
   MicrocycleType,
   PhysiologicalReading,
   RangeStatus,
+  ReadinessEvaluation,
   SubjectiveStatus,
 } from "../model/athletedata/atr";
+import type { CoachMetrics } from "../model/athletedata/coach";
 import type { DailyRecord } from "../model/athletedata/dailyRecord";
 import type { HealthBaseline, HealthSnapshot } from "../model/athletedata/health";
 import type { SubjectiveMetrics } from "../model/athletedata/subjective";
@@ -432,6 +435,106 @@ function evaluateSupercompensation(
   return { status: "coherent", missingSupporting };
 }
 
+// "Listo para competir" (informe de decisiones 2026-07-21, formaliza
+// Preguntas Estructurales §1). Distinto de Supercompensación: umbral MÍNIMO
+// aceptable para competir sin riesgo, no el pico fisiológico ideal -- por
+// diseño debe ser alcanzable con más frecuencia que Supercompensación (7
+// condiciones simultáneas). Solo se evalúa en Competitivo (mismo gate que
+// evaluateSupercompensation).
+const READINESS_SUPPORTING_THRESHOLD = 6; // No dado explícitamente en el informe para las "de
+// apoyo" de este veredicto (sí lo da para las obligatorias) -- se usa el
+// mismo piso de 6 que piernas/técnica para mantener un solo umbral
+// coherente en todo el veredicto, en vez de inventar un número distinto.
+
+function evaluateCompetitionReadiness(
+  fcDelta: number | undefined,
+  hrvDelta: number | undefined,
+  subjective: SubjectiveMetrics | undefined,
+  coach: CoachMetrics | undefined
+): ReadinessEvaluation {
+  // Bloqueadoras: veto total, sin importar el resto (informe de decisiones,
+  // mismos umbrales ya usados en isExcessiveFatigue/evaluateSupercompensation).
+  const blockedBy: string[] = [];
+  if (isNumber(subjective?.musclePain) && subjective.musclePain >= 8) blockedBy.push("Dolor (≥8)");
+  if (isNumber(subjective?.fatigue) && subjective.fatigue >= 8) blockedBy.push("Fatiga (≥8)");
+  if (isNumber(subjective?.discomfort) && subjective.discomfort >= 8) blockedBy.push("Molestia (≥8)");
+  if (blockedBy.length > 0) {
+    return { status: "not_ready", blockedBy, failedMandatory: [], missingMandatory: [], supportingConcerns: [] };
+  }
+
+  const fcRange = getFcTargetRange("Competitivo");
+  const mandatory: CoherenceCheck[] = [
+    {
+      label: "FC (dentro del rango esperado de Competitivo, §1.6)",
+      present: isNumber(fcDelta),
+      met: isNumber(fcDelta) && withinRange(fcDelta, fcRange),
+    },
+    {
+      label: "HRV (+5% a +20% del baseline)",
+      present: isNumber(hrvDelta),
+      met: isNumber(hrvDelta) && hrvDelta >= 5 && hrvDelta <= 20,
+    },
+    {
+      label: "Piernas (≥6, piso)",
+      present: isNumber(subjective?.legFeeling),
+      met: isNumber(subjective?.legFeeling) && subjective!.legFeeling! >= 6,
+    },
+    {
+      // Piso INDIVIDUAL, a propósito distinto del promedio ponderado de
+      // Capa 2 (getPerformanceDirection) -- evita que una técnica de 5/10
+      // aislada se declare "listo" solo porque el resto del promedio la
+      // compensa (caso sin resolver identificado en Preguntas
+      // Estructurales §1, ahora cerrado para este veredicto específico).
+      label: "Técnica (≥6, piso individual, no el promedio de Capa 2)",
+      present: isNumber(subjective?.techniqueQuality),
+      met: isNumber(subjective?.techniqueQuality) && subjective!.techniqueQuality! >= 6,
+    },
+  ];
+
+  const missingMandatory = mandatory.filter((check) => !check.present).map((check) => check.label);
+  if (missingMandatory.length > 0) {
+    return { status: "not_evaluable", blockedBy: [], failedMandatory: [], missingMandatory, supportingConcerns: [] };
+  }
+
+  const failedMandatory = mandatory.filter((check) => !check.met).map((check) => check.label);
+  if (failedMandatory.length > 0) {
+    return { status: "not_ready", blockedBy: [], failedMandatory, missingMandatory: [], supportingConcerns: [] };
+  }
+
+  const supporting: CoherenceCheck[] = [
+    {
+      label: `Explosividad (≥${READINESS_SUPPORTING_THRESHOLD})`,
+      present: isNumber(subjective?.explosiveness),
+      met: isNumber(subjective?.explosiveness) && subjective!.explosiveness! >= READINESS_SUPPORTING_THRESHOLD,
+    },
+    {
+      label: `Velocidad/reacción (≥${READINESS_SUPPORTING_THRESHOLD})`,
+      present: isNumber(subjective?.speedReaction),
+      met: isNumber(subjective?.speedReaction) && subjective!.speedReaction! >= READINESS_SUPPORTING_THRESHOLD,
+    },
+    {
+      // El informe pide "confianza" como variable de apoyo, pero
+      // SubjectiveMetrics (autoreporte del atleta) no tiene ese campo --
+      // solo CoachMetrics.confidence existe en el modelo. Se usa esa fuente
+      // explícitamente en vez de inventar un campo nuevo de atleta.
+      label: `Confianza (≥${READINESS_SUPPORTING_THRESHOLD}, reportada por el entrenador — no existe autoreporte del atleta en el modelo)`,
+      present: isNumber(coach?.confidence),
+      met: isNumber(coach?.confidence) && coach!.confidence! >= READINESS_SUPPORTING_THRESHOLD,
+    },
+    {
+      label: `Motivación (≥${READINESS_SUPPORTING_THRESHOLD})`,
+      present: isNumber(subjective?.motivation),
+      met: isNumber(subjective?.motivation) && subjective!.motivation! >= READINESS_SUPPORTING_THRESHOLD,
+    },
+  ];
+
+  const supportingConcerns = supporting
+    .filter((check) => !check.present || !check.met)
+    .map((check) => check.label);
+
+  return { status: "ready", blockedBy: [], failedMandatory: [], missingMandatory: [], supportingConcerns };
+}
+
 // Bug A (informe de decisiones 2026-07-20): antes usaba umbrales fijos
 // (fcDelta>18, hrvDelta<-30) que contradecían la tolerancia por microciclo
 // ya definida en Capa 1 -- un FC +19% en Carga (centro exacto de la fatiga
@@ -826,6 +929,65 @@ function mapDissonanceToState(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Índice de Confianza del Análisis (CLAUDE.md §5 -- propuesta ya aprobada
+// para avanzar sin bloquear; esta es una implementación provisional
+// razonable de "según variables disponibles", los umbrales exactos de
+// completitud NO están confirmados por el entrenador).
+// ---------------------------------------------------------------------------
+
+function computeConfidenceLevel(
+  baseline: HealthBaseline,
+  health: HealthSnapshot,
+  subjective: SubjectiveMetrics,
+  borg: number | undefined
+): ConfidenceLevel {
+  const hasBaseline = isNumber(baseline.restingHeartRate) && isNumber(baseline.hrv);
+  const hasTodayReading = isNumber(health.restingHeartRate) || isNumber(health.hrv);
+
+  if (!hasBaseline || !hasTodayReading) {
+    return "Baja";
+  }
+
+  const subjectiveFieldsPresent = Object.values(subjective).filter(isNumber).length;
+  const hasBorg = isNumber(borg);
+
+  if (isNumber(health.restingHeartRate) && isNumber(health.hrv) && subjectiveFieldsPresent >= 6 && hasBorg) {
+    return "Alta";
+  }
+
+  return "Media";
+}
+
+// ---------------------------------------------------------------------------
+// Comentario libre del atleta -- disonancia texto-vs-número (informe de
+// decisiones 2026-07-21). Detección simple por palabras clave, nunca
+// análisis de sentimiento complejo (a propósito, para mantener el mecanismo
+// trazable). El comentario NUNCA alimenta el motor determinístico más allá
+// de esta alerta -- no mueve `state`, igual que la divergencia FC/HRV.
+// ---------------------------------------------------------------------------
+
+const PAIN_KEYWORDS = ["dolor", "duele", "molestia", "lesion", "lesión", "incomod"];
+const PAIN_SIGNAL_THRESHOLD = 5; // por debajo de esto, el valor numérico se considera "bajo"
+
+function detectFreeTextDissonance(
+  athleteNotes: string | undefined,
+  subjective: SubjectiveMetrics
+): string | undefined {
+  if (!athleteNotes) return undefined;
+  const normalized = athleteNotes.toLowerCase();
+  const mentionsPain = PAIN_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  if (!mentionsPain) return undefined;
+
+  const musclePainLow = !isNumber(subjective.musclePain) || subjective.musclePain < PAIN_SIGNAL_THRESHOLD;
+  const discomfortLow = !isNumber(subjective.discomfort) || subjective.discomfort < PAIN_SIGNAL_THRESHOLD;
+
+  if (musclePainLow && discomfortLow) {
+    return "Disonancia texto-vs-número: el comentario del atleta menciona dolor/molestia, pero los valores numéricos reportados son bajos. Revisar con el atleta.";
+  }
+  return undefined;
+}
+
 export function evaluateATR(input: ATRInput): ATRInterpretation {
   const { microcycle, baseline, health, subjective, training, history, coach } = input;
 
@@ -852,6 +1014,11 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
     training.internalLoad ?? calculateInternalLoad(training.borgCR10, training.durationMinutes);
 
   const alerts = buildMicrocycleAlerts(microcycle, fcDelta, hrvDelta, sleepHours, borg, subjective);
+
+  const freeTextDissonance = detectFreeTextDissonance(subjective.athleteNotes, subjective);
+  if (freeTextDissonance) {
+    alerts.push(freeTextDissonance);
+  }
 
   // Capa 1 — ambos normalizados al eje "nivel de fatiga" antes de comparar
   // (ver toFatigueAxis: FC alto y HRV bajo son la misma señal de fatiga).
@@ -911,6 +1078,18 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
   }
 
   const level3 = history ? evaluateLevel3(history) : undefined;
+
+  // "Listo para competir" (informe de decisiones 2026-07-21) -- solo se
+  // evalúa en Competitivo, mismo gate que Supercompensación. Visibilidad
+  // exclusiva del entrenador: se calcula siempre aquí (motor determinístico,
+  // sin condicionar a quién lo va a ver), la restricción de a quién se le
+  // MUESTRA es responsabilidad de la UI (ver home.tsx).
+  const competitionReadiness =
+    microcycle === "Competitivo"
+      ? evaluateCompetitionReadiness(fcDelta, hrvDelta, subjective, coach)
+      : undefined;
+
+  const confidenceLevel = computeConfidenceLevel(baseline, health, subjective, borg);
 
   let message = "";
   switch (state) {
@@ -974,6 +1153,8 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
     level3,
     postWorkoutObservation,
     postWorkoutTrend,
+    competitionReadiness,
+    confidenceLevel,
   };
 }
 
