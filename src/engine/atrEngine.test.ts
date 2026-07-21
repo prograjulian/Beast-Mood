@@ -211,6 +211,109 @@ describe("Capa 3 + Nivel 1 — estados finales por microciclo", () => {
     expect(result.state).toBe("Fatiga funcional");
   });
 
+  test("Bug C: técnica autoreportada muy baja pesa menos que el resto en Capa 2 (no arrastra sola el promedio)", () => {
+    // Con peso igual (comportamiento viejo) este promedio habría dado
+    // exactamente 4.0 -> "declining" -> peor_de_lo_esperado. Con el peso
+    // reducido de técnica (0.5) el promedio sube a ~4.23 -> ya no declina.
+    const result = evaluateATR({
+      microcycle: "Carga",
+      baseline,
+      health: { restingHeartRate: pct(50, 17), hrv: pct(100, -25) },
+      subjective: {
+        overallPerformance: 4.5,
+        speedReaction: 4.5,
+        explosiveness: 4.5,
+        strikingPower: 4.5,
+        easeOfExit: 4.5,
+        legFeeling: 4.5,
+        techniqueQuality: 1,
+      },
+      training: { borgCR10: 6 },
+    });
+    expect(result.subjectiveStatus).not.toBe("peor_de_lo_esperado");
+  });
+
+  test("Bug C: técnica observada por el entrenador (muy baja) escala Fatiga funcional -> Fatiga excesiva", () => {
+    const withoutCoach = evaluateATR({
+      microcycle: "Carga",
+      baseline,
+      health: { restingHeartRate: pct(50, 17), hrv: pct(100, -25) },
+      subjective: {
+        overallPerformance: 5,
+        techniqueQuality: 5,
+        speedReaction: 5,
+        explosiveness: 5,
+        strikingPower: 5,
+        easeOfExit: 5,
+        legFeeling: 5,
+      },
+      training: { borgCR10: 6 },
+    });
+    expect(withoutCoach.state).toBe("Fatiga funcional");
+
+    const withCoach = evaluateATR({
+      microcycle: "Carga",
+      baseline,
+      health: { restingHeartRate: pct(50, 17), hrv: pct(100, -25) },
+      subjective: {
+        overallPerformance: 5,
+        techniqueQuality: 5,
+        speedReaction: 5,
+        explosiveness: 5,
+        strikingPower: 5,
+        easeOfExit: 5,
+        legFeeling: 5,
+      },
+      training: { borgCR10: 6 },
+      coach: { technique: 1 },
+    });
+    expect(withCoach.state).toBe("Fatiga excesiva");
+    expect(withCoach.alerts.some((a) => a.includes("entrenador reporta técnica"))).toBe(true);
+  });
+
+  test("Bug A: Carga con FC +19% (borde exacto de lo esperado) -> Fatiga funcional, NO excesiva", () => {
+    // Regresión directa del bug: getFcTargetRange("Carga").max=19. Antes del
+    // fix, isExcessiveFatigue usaba fcDelta>18 hardcoded y esto se marcaba
+    // "Fatiga excesiva" aunque Capa 1 ya lo consideraba dentro de rango.
+    const result = evaluateATR({
+      microcycle: "Carga",
+      baseline,
+      health: { restingHeartRate: pct(50, 19), hrv: pct(100, -25) },
+      subjective: {
+        overallPerformance: 5,
+        techniqueQuality: 5,
+        speedReaction: 5,
+        explosiveness: 5,
+        strikingPower: 5,
+        easeOfExit: 5,
+        legFeeling: 5,
+      },
+      training: { borgCR10: 6 },
+    });
+    expect(result.state).toBe("Fatiga funcional");
+  });
+
+  test("Bug A: Carga con HRV -31% (dentro de la tolerancia, fuera del umbral fijo viejo) -> Fatiga funcional, NO excesiva", () => {
+    // getHrvTargetRange("Carga")={-30,-20}, tolerancia ±3 -> hasta -33 sigue
+    // "dentro_de_rango". El umbral viejo (hrvDelta<-30) marcaba esto excesivo.
+    const result = evaluateATR({
+      microcycle: "Carga",
+      baseline,
+      health: { restingHeartRate: pct(50, 17), hrv: pct(100, -31) },
+      subjective: {
+        overallPerformance: 5,
+        techniqueQuality: 5,
+        speedReaction: 5,
+        explosiveness: 5,
+        strikingPower: 5,
+        easeOfExit: 5,
+        legFeeling: 5,
+      },
+      training: { borgCR10: 6 },
+    });
+    expect(result.state).toBe("Fatiga funcional");
+  });
+
   test("Carga con dolor extremo -> Fatiga excesiva sin importar el resto", () => {
     const result = evaluateATR({
       microcycle: "Carga",
@@ -253,11 +356,13 @@ describe("Capa 3 + Nivel 1 — estados finales por microciclo", () => {
     expect(result.state).toBe("Preparacion insuficiente");
   });
 
-  test("Competitivo con coherencia total en los 6 indicadores -> Supercompensación", () => {
+  test("Competitivo con coherencia total en las 4 obligatorias + 3 de apoyo -> Supercompensación", () => {
+    // HRV +30% queda fuera del rango obligatorio +5%/+20% (Bug D) aunque
+    // "suene" bien -- la regla es un rango, no solo un piso.
     const result = evaluateATR({
       microcycle: "Competitivo",
       baseline,
-      health: { restingHeartRate: pct(50, -12), hrv: pct(100, 30) },
+      health: { restingHeartRate: pct(50, -12), hrv: pct(100, 15) },
       subjective: {
         explosiveness: 9,
         speedReaction: 9,
@@ -273,13 +378,13 @@ describe("Capa 3 + Nivel 1 — estados finales por microciclo", () => {
     expect(result.state).toBe("Supercompensacion");
   });
 
-  test("Competitivo con un solo indicador fuerte (explosividad baja) NO alcanza Supercompensación", () => {
+  test("Competitivo con las 4 obligatorias fuera de rango -> NO alcanza Supercompensación", () => {
     const result = evaluateATR({
       microcycle: "Competitivo",
       baseline,
-      health: { restingHeartRate: pct(50, -12), hrv: pct(100, 30) },
+      health: { restingHeartRate: pct(50, -12), hrv: pct(100, 30) }, // HRV +30% excede el 20% obligatorio
       subjective: {
-        explosiveness: 5, // por debajo del umbral de coherencia (>=8)
+        explosiveness: 9,
         speedReaction: 9,
         legFeeling: 9,
         motivation: 9,
@@ -291,6 +396,42 @@ describe("Capa 3 + Nivel 1 — estados finales por microciclo", () => {
       training: { borgCR10: 2 },
     });
     expect(result.state).not.toBe("Supercompensacion");
+  });
+
+  test("Competitivo con las 4 obligatorias OK pero explosividad baja (de apoyo) -> SÍ alcanza Supercompensación, con advertencia", () => {
+    // Bug D: las variables de apoyo (explosividad, velocidad/reacción,
+    // motivación) ya no bloquean la declaración -- solo bajan la confianza
+    // y deben quedar señaladas explícitamente en las alertas.
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: { restingHeartRate: pct(50, -12), hrv: pct(100, 15) },
+      subjective: {
+        explosiveness: 3, // por debajo del umbral de apoyo (>=8), ya no bloquea
+        speedReaction: 9,
+        legFeeling: 9,
+        motivation: 9,
+      },
+      training: { borgCR10: 2 },
+    });
+    expect(result.state).toBe("Supercompensacion");
+    expect(result.alerts.some((a) => a.includes("confianza parcial"))).toBe(true);
+    expect(result.alerts.some((a) => a.includes("Explosividad"))).toBe(true);
+  });
+
+  test("Competitivo sin dato de Borg (obligatoria ausente) -> no evaluable, no 'Recuperación adecuada' silenciosa", () => {
+    // Bug D: falta un dato OBLIGATORIO (no que esté mal, que directamente no
+    // se reportó) debe señalarse explícitamente, no caer en silencio.
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: { restingHeartRate: pct(50, -12), hrv: pct(100, 15) },
+      subjective: { explosiveness: 9, speedReaction: 9, legFeeling: 9, motivation: 9 },
+      training: {}, // sin borgCR10
+    });
+    expect(result.state).toBe("Recuperacion adecuada");
+    expect(result.alerts.some((a) => a.includes("No evaluable como Supercompensación"))).toBe(true);
+    expect(result.alerts.some((a) => a.includes("Borg"))).toBe(true);
   });
 });
 

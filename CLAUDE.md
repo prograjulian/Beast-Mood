@@ -77,10 +77,28 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-20 — reglas de ingeniería/CI/subagentes integradas (ver sección 10
-> y la entrada de sesión 2026-07-20 en sección 6); no hubo cambios de lógica ATR esta sesión, el
-> estado del motor sigue siendo el descrito abajo desde el 2026-07-16. Repo ya en GitHub:
-> https://github.com/prograjulian/Beast-Mood
+> Última actualización: 2026-07-21 — 5 bugs + 1 métrica nueva del motor ATR resueltos según informe
+> de decisiones del entrenador (ver entrada de sesión 2026-07-21 en sección 6 para el detalle
+> completo). Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+
+- [x] **Resuelto — informe de decisiones del entrenador 2026-07-21: 5 bugs + 1 métrica nueva.**
+      Ver la entrada de sesión 2026-07-21 (sección 6) para el detalle completo de cada uno. Resumen:
+      (A) `isExcessiveFatigue` ya no usa umbrales fijos, usa los mismos rangos+tolerancia por
+      microciclo que Capa 1 — restringido a Carga/Impacto a propósito (generalizarlo a los 6
+      microciclos rompía Recuperación→Activación, ver el comentario en el código). (B) Modelo de
+      captura con 3 tipos de lectura (matutina/post-entreno 2h/pre-sueño,
+      `src/model/athletedata/health.ts`) y baseline con ventana móvil real de 7 días
+      (`src/engine/baselineEngine.ts`, reemplaza el valor estático) — resuelve el punto 6 de la
+      sección 5 (parcialmente: la exclusión de outliers sigue sin resolver). (C) Técnica
+      autoreportada pesa menos (no veto) en Capa 2; técnica observada por el entrenador puede
+      escalar Fatiga funcional → Fatiga excesiva en Capa 4 (primera vez que Capa 4 hace algo en
+      código, antes `input.coach` no se usaba). (D) Supercompensación separa 4 variables
+      obligatorias de 3 de apoyo — dato obligatorio faltante ya no cae en silencio a "Recuperación
+      adecuada", queda señalado explícitamente. (E) Comentario corregido, la prioridad FC>HRV
+      siempre fue una regla confirmada (Motor ATR §2.3), nunca estuvo en duda. Métrica nueva:
+      Recuperación Autonómica Post-Entreno (`src/engine/postWorkoutEngine.ts`), Nivel 1 observación
+      + Nivel 2 alerta de tendencia, con heurística de "deterioro progresivo" explícitamente
+      provisional. 57/57 tests pasando (23 nuevos), `npx tsc --noEmit` y `npm run lint` limpios.
 
 - [x] **Resuelto — test suite en Jest para `atrEngine.ts` (34 tests, todos pasando).**
       Se instaló `jest` + `ts-jest` + `@types/jest` como devDependencies. `jest.config.js` usa
@@ -154,9 +172,11 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       modelo `src/model/athletedata/dailyRecord.ts` unifica health/subjective/training/coach/
       microciclo/notas en un solo registro diario (reemplaza el `DailyMetrics` viejo, que
       duplicaba campos con nombres divergentes — `technicalQuality` vs `techniqueQuality`, etc.
-      — y quedó eliminado). `HealthBaseline` sigue siendo un valor único por atleta (no
+      — y quedó eliminado). ~~`HealthBaseline` sigue siendo un valor único por atleta (no
       histórico) porque el tamaño de ventana móvil y el umbral de outliers todavía no están
-      confirmados por el entrenador (sección 5, punto 6) — no se inventó ese cálculo. Se agregó
+      confirmados por el entrenador~~ **la ventana móvil se resolvió el 2026-07-21** (7 días, ver
+      `src/engine/baselineEngine.ts` y la entrada de sesión correspondiente) — el umbral de
+      exclusión de outliers sigue sin confirmar (sección 5, punto 6). Se agregó
       `getLiveHealthSnapshot`/`saveLiveHealthSnapshot` como slot único explícito para el dato de
       Health "en vivo" del día en curso, antes de confirmarse como parte del historial (distinto
       del historial real, a propósito). Todo indexado por `athleteId` desde ahora (sección 8).
@@ -214,21 +234,39 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 ## 5. Decisiones pendientes (resumen vivo — fuente completa: `Beast_Mood_Preguntas_Estructurales.md`)
 
 ### Requieren al entrenador (NO inventar, preguntar):
-1. Variables obligatorias vs. de apoyo para declarar "listo para competir".
-2. Jerarquía/peso de cada variable (¿pesa más HRV, técnica, explosividad, dolor?).
+1. Variables obligatorias vs. de apoyo para declarar "listo para competir" en general — **el
+   informe de decisiones 2026-07-20 resolvió esto solo para Supercompensación específicamente**
+   (Bug D: 4 obligatorias — FC, HRV, piernas, Borg — + 3 de apoyo — explosividad, velocidad/
+   reacción, motivación), como precedente, no como respuesta general todavía.
+2. Jerarquía/peso de cada variable (¿pesa más HRV, técnica, explosividad, dolor?) — **parcialmente
+   resuelto para técnica** (Bug C, ver punto 5 abajo), sigue abierto para el resto.
 3. Lista de variables "bloqueadoras" que nunca deben compensarse (ej. dolor 8/10 con todo lo
    demás perfecto → ¿se puede declarar "listo"? mecanismo técnico ya propuesto: capa de veto).
 4. Confirmar si la resolución por defecto de contradicciones (mostrar ambas lecturas, nunca
    ocultar la disonancia) es suficiente o si necesita veto como el punto 3.
 5. Rol final de las observaciones del entrenador: ¿anulan una alerta del sistema, o solo la
-   matizan en el registro?
-6. Tamaño exacto de ventana móvil del baseline y umbral exacto de exclusión de outliers.
+   matizan en el registro? **Sigue sin resolver en general.** El informe de decisiones 2026-07-20
+   (Bug C) sí resolvió el caso específico de técnica: técnica observada por el entrenador
+   (`coach.technique`) puede *reforzar* (escalar Fatiga funcional → Fatiga excesiva), nunca
+   *anular* una lectura mejor. No se generalizó al resto de observaciones del entrenador.
+6. ~~Tamaño exacto de ventana móvil del baseline~~ **resuelto el 2026-07-20** (Bug B.2: 7 días
+   calendario, mínimo 4 lecturas válidas — ver `src/engine/baselineEngine.ts`). El **umbral de
+   exclusión de outliers (±2–3 desviaciones estándar, Motor ATR §1.8) sigue sin resolver** — no
+   implementado, no inventado.
 7. Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual
    (Motor ATR sección 13) tome precedencia sobre el perfil genérico (propuesta a validar: 3–5 podios).
 8. Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
    numéricos entre Bajo/Moderado/Alto/Crítico.
 9. Confirmar si las "Alertas" del Dashboard Entrenador son exactamente los 4 tipos de la
    sección 11.4 del Motor ATR, o si hay tipos adicionales.
+10. Fórmula exacta de "deterioro progresivo" para la Recuperación Autonómica Post-Entreno (métrica
+    nueva del informe de decisiones 2026-07-20) — se implementó una heurística provisional (3
+    lecturas consecutivas empeorando dentro del bloque actual, ver `src/engine/postWorkoutEngine.ts`),
+    explícitamente no confirmada por el entrenador.
+11. Índice/unidad real de HRV que entregará Apple Health cuando se integre (rMSSD vs. SDNN —
+    Apple Health reporta SDNN por defecto, distinto del rMSSD al que aplica la literatura citada
+    en el informe de decisiones 2026-07-20 para el promedio móvil con ln-transform). No se fuerza
+    ninguna transformación todavía porque no se sabe qué índice va a llegar.
 
 ### Ya tienen propuesta inicial (arquitectura, se puede avanzar sin bloquear):
 - Índice de Confianza del Análisis (Alta/Media/Baja según variables disponibles).
@@ -313,7 +351,87 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   adoptaron `docs/django.md`/`flask.md`/`fastapi.md`/`decision-framework.md`/`automation.md` de la
   plantilla base — no aplican a este stack, ver el cierre de la sección 10 para el detalle de qué
   se dejó fuera y por qué. `npm run lint`, `npx tsc --noEmit` (app y jest), y `npm test` (34/34)
-  verificados limpios tras los cambios. Cambios sin commitear todavía al cierre de esta sesión.
+  verificados limpios tras los cambios. Commiteado y pusheado (`837be31`). Dos commits de
+  seguimiento el mismo día: `9d3ebbc` actualiza `actions/checkout`/`actions/setup-node`/
+  `gitleaks-action` a versiones sin la deprecación de Node 20 que GitHub anunció para 2026
+  (sin cambios de comportamiento), y `e7272de` corrige los 7 warnings de ESLint preexistentes
+  (helper duplicado sin uso en `home.tsx`, import sin usar en `metricsRepository.ts`, imports
+  duplicados fusionados, variable `hrvRange` sin uso en `atrEngine.ts` — señalada esa última como
+  posible hueco de lógica, no solo estilo, ver el bug A de la entrada siguiente). CI verificado en
+  verde en GitHub Actions después de cada push.
+- **2026-07-21** — El usuario pidió una revisión honesta de la interpretación de datos del motor
+  ATR (Capas 1–3, no los microciclos en sí, que quedan tal como están) comparada contra literatura
+  real de ciencias del deporte. Hallazgos entregados: la filosofía general (individualización,
+  nunca declarar por una sola variable, subjetivo tan válido como fisiológico) coincide con
+  consenso real (Meeusen et al. 2013 ECSS/ACSM sobre sobreentrenamiento; Saw/Main/Gastin 2016 sobre
+  medidas subjetivas; Foster 2001 para carga interna, ya bien implementado). Se reportaron 5
+  hallazgos concretos (A–E). El usuario los llevó a una sesión de decisión con el entrenador y
+  volvió con un informe de decisiones que resuelve los 5 más una métrica nueva no prevista
+  originalmente. Todo implementado y verificado en esta sesión (57/57 tests, incluidos 23 nuevos;
+  `npx tsc --noEmit` y `npm run lint` limpios):
+  - **Bug A (fix directo):** `isExcessiveFatigue` en `atrEngine.ts` usaba umbrales fijos
+    (`fcDelta>18`, `hrvDelta<-30`) independientes de la tolerancia por microciclo ya definida en
+    Capa 1 — un FC +19% en Carga (centro exacto de la fatiga funcional buscada, Motor ATR §1.2) se
+    marcaba "Fatiga excesiva" solo porque 19>18. Ahora usa `classifyAgainstRange`/`toFatigueAxis`
+    con los mismos `getFcTargetRange`/`getHrvTargetRange` + tolerancia que el resto del motor.
+    **Ajuste encontrado al correr los tests existentes, no estaba en el informe:** generalizar
+    este check a los 6 microciclos (no solo Carga/Impacto) rompía Recuperación→Activación —
+    bandas esperadas muy angostas ahí (ej. Activación 0%–+5%) hacían que cualquier HRV
+    "por_debajo" se declarara "Fatiga excesiva" de inmediato, saltándose Capa 3 y Nivel 2 (que es
+    quien debe decidir "Preparación insuficiente" en ese caso). Se mantuvo restringido a
+    Carga/Impacto, igual que ya estaba el check de FC antes del fix.
+  - **Bug B (captura + baseline):** `health.ts` gana `PostWorkoutReading`/`PreSleepReading` como
+    estructuras separadas de la lectura matutina (que sigue siendo `restingHeartRate`/`hrv`, sin
+    rename — ya era la única que alimenta Capa 1). Nuevo `src/engine/baselineEngine.ts`:
+    `calculateHealthBaseline` implementa la ventana móvil de 7 días calendario (los 7 días
+    *anteriores* al día evaluado, sin incluirlo — evita comparar un día contra un baseline que ya
+    lo contiene a él mismo), excluye días de Carga/Impacto (Motor ATR §1.8, ya confirmado antes),
+    y si hay menos de 4 lecturas válidas en la ventana mantiene el baseline anterior en vez de
+    sobreescribirlo con un promedio poco representativo. Conectado en `home.tsx`: calcula y
+    persiste el baseline real en cada carga, reemplazando el valor estático que se leía sin
+    recalcular. **Sin resolver, no inventado:** exclusión de outliers por desviación estándar
+    (§1.8), y si HRV llegará como rMSSD o SDNN vía Apple Health (Apple Health por defecto da SDNN,
+    no rMSSD, que es a lo que aplica el ln-transform que cita el informe de decisiones) — por eso
+    no se aplicó ninguna transformación logarítmica todavía.
+  - **Bug C (Capa 2 + Capa 4):** técnica autoreportada (`techniqueQuality`) sigue en el promedio
+    subjetivo de `getPerformanceDirection`, pero con la mitad de peso que el resto (constante
+    `TECHNIQUE_SELF_REPORT_WEIGHT`), no veto. Técnica observada por el entrenador
+    (`coach.technique`) es nueva en el motor — antes `ATRInput.coach` no se usaba en ningún lado
+    de `evaluateATR` — ahora, si es ≤2, agrega una alerta explícita y escala Fatiga funcional →
+    Fatiga excesiva (nunca degrada un estado ya mejor ni anula uno ya peor). Es la primera vez que
+    Capa 4 (Motor ATR §6) hace algo en código. El rol general de "anular vs. matizar" del
+    entrenador (§14.3) sigue sin resolver — esto cubre solo el caso específico de técnica.
+  - **Bug D (Supercompensación):** `isSupercompensationCoherent` (AND de 6 variables, sin
+    distinguir "no cumple" de "no se reportó") reemplazada por `evaluateSupercompensation`: 4
+    obligatorias (FC ≤-3%, HRV entre +5% y +20%, piernas ≥8, Borg ≤2) deben estar presentes Y
+    cumplirse todas; 3 de apoyo (explosividad, velocidad/reacción — el modelo no tiene un campo de
+    "reacción" separado, `speedReaction` cubre ambas —, motivación) pueden faltar sin bloquear la
+    declaración, pero generan una alerta explícita de qué falta. Si falta una obligatoria, ya no
+    cae en silencio a "Recuperación adecuada": el mensaje dice explícitamente qué dato falta y que
+    no fue evaluable (CLAUDE.md §2: no descartar un estado de alto impacto con datos incompletos
+    sin marcar la confianza baja).
+  - **Bug E (solo comentario):** el comentario en `atrEngine.ts` agrupaba la prioridad FC>HRV
+    junto con la banda de tolerancia ±3% bajo "provisional" — la prioridad siempre fue una regla
+    confirmada (Motor ATR §2.3), solo el ancho de la tolerancia sigue abierto. Reescrito para no
+    ser engañoso. Sin cambio de lógica.
+  - **Métrica nueva — Recuperación Autonómica Post-Entreno:** no estaba en el reporte de bugs
+    original, surgió de la discusión con el entrenador. Nuevo `src/engine/postWorkoutEngine.ts`:
+    Nivel 1 (`observePostWorkoutRecovery`) calcula deltas contra baseline de una lectura ~2h
+    (±15min) post-entreno, modo observación pura, nunca dispara estado (no hay rangos esperados
+    documentados para esta métrica, no se inventaron). Nivel 2 (`evaluatePostWorkoutTrend`)
+    detecta deterioro progresivo de HRV post-entreno dentro del bloque de microciclo actual →
+    alerta temprana (no cambia `state`). Arranque en frío: gate de 7 lecturas válidas históricas
+    del mismo TIPO de microciclo (piso 5). **Heurística de "deterioro progresivo" explícitamente
+    provisional** (3 lecturas consecutivas empeorando) — el documento de decisiones no define la
+    fórmula exacta, queda en sección 5 punto 10 como pendiente de confirmar.
+  - Refactor de apoyo: `getMicrocycleBlocks`/`MicrocycleBlock` se movieron de `atrEngine.ts` a
+    `src/engine/microcycleBlocks.ts` (compartido con `postWorkoutEngine.ts`, evita una dependencia
+    circular entre los dos motores).
+  Próximo paso sugerido: revisar el diff con el entrenador, commitear/pushear, y decidir entre
+  implementar Apple Health (para dejar de depender de captura manual, y para poder confirmar el
+  índice real de HRV pendiente arriba) o seguir cerrando huecos de sección 5 (IRL, Perfil
+  Competitivo Individual, generalizar el modelo obligatorias/de-apoyo del Bug D a "listo para
+  competir" en general).
 
 ---
 

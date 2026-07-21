@@ -13,6 +13,8 @@ import type { DailyRecord } from "../model/athletedata/dailyRecord";
 import type { HealthBaseline, HealthSnapshot } from "../model/athletedata/health";
 import type { SubjectiveMetrics } from "../model/athletedata/subjective";
 import { calculateInternalLoad, type TrainingLoad } from "../model/athletedata/training";
+import { getMicrocycleBlocks, type MicrocycleBlock } from "./microcycleBlocks";
+import { evaluatePostWorkoutTrend, observePostWorkoutRecovery } from "./postWorkoutEngine";
 
 type ExpectedRange = {
   min?: number;
@@ -99,8 +101,13 @@ function getHrvTargetRange(microcycle: MicrocycleType): ExpectedRange {
 }
 
 // ---------------------------------------------------------------------------
-// Capa 1 — Lectura fisiológica (Motor ATR §2). Banda de tolerancia ±3%
-// (§2.1, "sugerido", no confirmada por el entrenador — provisional).
+// Capa 1 — Lectura fisiológica (Motor ATR §2). La prioridad de FC sobre HRV
+// ante contradicción (ver resolvePhysiological más abajo) es una regla
+// CONFIRMADA (§2.3: "Regla acordada: FC tiene prioridad sobre HRV cuando
+// hay contradicción" -- reconfirmado en el informe de decisiones
+// 2026-07-20, Bug E: no se reabre la discusión científica). Lo único que
+// sigue provisional es el ANCHO de la banda de tolerancia, ±3% (§2.1,
+// "sugerido, a definir" en el documento fuente).
 // ---------------------------------------------------------------------------
 
 const PHYSIOLOGICAL_TOLERANCE_PCT = 3;
@@ -159,27 +166,44 @@ function resolvePhysiological(
 // provisional: dolor/fatiga/molestia altos dominan (umbral >=8, ya usado en
 // el motor para "fatiga excesiva"), el resto se agrega como promedio de
 // rendimiento igual que antes.
+//
+// Bug C (informe de decisiones 2026-07-20): la técnica AUTOreportada por el
+// atleta (techniqueQuality) sigue en este promedio, pero con menor peso que
+// el resto -- no veto, la autopercepción técnica es poco fiable bajo fatiga
+// (literatura de aprendizaje motor/autopercepción deportiva). La técnica
+// OBSERVADA por el entrenador (coach.technique) es una señal distinta, con
+// más peso, manejada aparte en evaluateATR (Capa 4).
 // ---------------------------------------------------------------------------
+
+const TECHNIQUE_SELF_REPORT_WEIGHT = 0.5;
+
+type WeightedItem = { value: number; weight: number };
+
+function weighted(value: number | undefined, weight: number): WeightedItem | null {
+  return isNumber(value) ? { value, weight } : null;
+}
 
 function getPerformanceDirection(
   microcycle: MicrocycleType,
   subjective?: SubjectiveMetrics
 ): { improving: boolean; declining: boolean } {
   const performanceItems = [
-    subjective?.overallPerformance,
-    subjective?.techniqueQuality,
-    subjective?.speedReaction,
-    subjective?.explosiveness,
-    subjective?.strikingPower,
-    subjective?.easeOfExit,
-    subjective?.legFeeling,
-  ].filter(isNumber);
+    weighted(subjective?.overallPerformance, 1),
+    weighted(subjective?.techniqueQuality, TECHNIQUE_SELF_REPORT_WEIGHT),
+    weighted(subjective?.speedReaction, 1),
+    weighted(subjective?.explosiveness, 1),
+    weighted(subjective?.strikingPower, 1),
+    weighted(subjective?.easeOfExit, 1),
+    weighted(subjective?.legFeeling, 1),
+  ].filter((item): item is WeightedItem => item !== null);
 
   if (performanceItems.length === 0) {
     return { improving: false, declining: false };
   }
 
-  const avg = performanceItems.reduce((sum, n) => sum + n, 0) / performanceItems.length;
+  const totalWeight = performanceItems.reduce((sum, item) => sum + item.weight, 0);
+  const avg =
+    performanceItems.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
 
   if (microcycle === "Carga" || microcycle === "Impacto") {
     return {
@@ -320,31 +344,130 @@ function buildMicrocycleAlerts(
   return alerts;
 }
 
-function isSupercompensationCoherent(
-  fcDelta?: number,
-  hrvDelta?: number,
-  subjective?: SubjectiveMetrics
-): boolean {
-  // Motor ATR §1.6: requiere coherencia simultánea, un solo indicador alto no basta.
-  const fcVeryLow = isNumber(fcDelta) && fcDelta <= -5;
-  const hrvHigh = isNumber(hrvDelta) && hrvDelta >= 5;
-  const explosivenessHigh = isNumber(subjective?.explosiveness) && subjective.explosiveness >= 8;
-  const speedHigh = isNumber(subjective?.speedReaction) && subjective.speedReaction >= 8;
-  const legsLight = isNumber(subjective?.legFeeling) && subjective.legFeeling >= 8;
-  const motivationHigh = isNumber(subjective?.motivation) && subjective.motivation >= 7;
+// Bug D (informe de decisiones 2026-07-20): antes exigía coherencia AND de 6
+// variables sin distinguir "no cumple el umbral" de "no se reportó ese día".
+// Si faltaba un solo dato (ej. motivación sin llenar), el sistema nunca
+// declaraba Supercompensación y caía en silencio a "Recuperación adecuada"
+// sin señalar que en realidad no pudo evaluar -- justo lo que CLAUDE.md §2
+// pide evitar (no declarar/descartar un estado de alto impacto con datos
+// incompletos sin marcar la confianza baja). Ahora se separan 4 variables
+// OBLIGATORIAS (deben estar presentes Y cumplirse todas) de 3 de apoyo
+// (pueden faltar sin bloquear la declaración, pero se avisa explícitamente
+// qué falta). Nota de mapeo: el documento de decisiones lista 4 variables de
+// apoyo ("explosividad, velocidad, reacción, motivación"), pero el modelo de
+// datos actual (SubjectiveMetrics) solo tiene `speedReaction`, que ya cubre
+// velocidad+reacción como un único campo -- no hay un campo de "reacción"
+// separado que inventar.
+export type SupercompensationEvaluation =
+  | { status: "coherent"; missingSupporting: string[] }
+  | { status: "not_coherent" }
+  | { status: "not_evaluable"; missingMandatory: string[] };
 
-  return fcVeryLow && hrvHigh && explosivenessHigh && speedHigh && legsLight && motivationHigh;
+interface CoherenceCheck {
+  label: string;
+  present: boolean;
+  met: boolean;
 }
 
+function evaluateSupercompensation(
+  fcDelta?: number,
+  hrvDelta?: number,
+  borg?: number,
+  subjective?: SubjectiveMetrics
+): SupercompensationEvaluation {
+  const mandatory: CoherenceCheck[] = [
+    {
+      label: "FC (≤ baseline -3%)",
+      present: isNumber(fcDelta),
+      met: isNumber(fcDelta) && fcDelta <= -3,
+    },
+    {
+      label: "HRV (+5% a +20% del baseline)",
+      present: isNumber(hrvDelta),
+      met: isNumber(hrvDelta) && hrvDelta >= 5 && hrvDelta <= 20,
+    },
+    {
+      label: "Sensación de piernas (≥8)",
+      present: isNumber(subjective?.legFeeling),
+      met: isNumber(subjective?.legFeeling) && subjective!.legFeeling! >= 8,
+    },
+    {
+      label: "Borg (≤2)",
+      present: isNumber(borg),
+      met: isNumber(borg) && borg <= 2,
+    },
+  ];
+
+  const missingMandatory = mandatory.filter((check) => !check.present).map((check) => check.label);
+  if (missingMandatory.length > 0) {
+    return { status: "not_evaluable", missingMandatory };
+  }
+
+  if (!mandatory.every((check) => check.met)) {
+    return { status: "not_coherent" };
+  }
+
+  const supporting: CoherenceCheck[] = [
+    {
+      label: "Explosividad (≥8)",
+      present: isNumber(subjective?.explosiveness),
+      met: isNumber(subjective?.explosiveness) && subjective!.explosiveness! >= 8,
+    },
+    {
+      label: "Velocidad/reacción (≥8)",
+      present: isNumber(subjective?.speedReaction),
+      met: isNumber(subjective?.speedReaction) && subjective!.speedReaction! >= 8,
+    },
+    {
+      label: "Motivación (≥7)",
+      present: isNumber(subjective?.motivation),
+      met: isNumber(subjective?.motivation) && subjective!.motivation! >= 7,
+    },
+  ];
+
+  const missingSupporting = supporting
+    .filter((check) => !check.present || !check.met)
+    .map((check) => check.label);
+
+  return { status: "coherent", missingSupporting };
+}
+
+// Bug A (informe de decisiones 2026-07-20): antes usaba umbrales fijos
+// (fcDelta>18, hrvDelta<-30) que contradecían la tolerancia por microciclo
+// ya definida en Capa 1 -- un FC +19% en Carga (centro exacto de la fatiga
+// funcional buscada, Motor ATR §1.2) se marcaba "Fatiga excesiva" solo
+// porque 19>18, aunque classifyAgainstRange ya lo consideraba
+// "dentro_de_rango" con la tolerancia de ±3%. Ahora usa los mismos
+// getFcTargetRange/getHrvTargetRange + tolerancia que el resto del motor:
+// solo es "excesivo" lo que Capa 1 ya clasificaría como "por_encima" en el
+// eje de fatiga, nunca un número inventado aparte.
+//
+// Restringido a Carga/Impacto a propósito (igual que el FC ya lo estaba
+// antes del fix): son los dos microciclos donde "fatiga funcional vs.
+// excesiva" es la distinción central del proyecto (§9/§10) y donde el rango
+// esperado es ancho por diseño. Generalizar este short-circuit a los demás
+// microciclos (bandas mucho más angostas, ej. Activación 0%-+5%) rompía
+// casos que el resto del motor ya resuelve bien: cualquier HRV "por_debajo"
+// en Activación pasaba a "Fatiga excesiva" de inmediato, saltándose Capa 3
+// y Nivel 2 (que es quien debe decidir "Preparación insuficiente" ahí,
+// según §5.2 Recuperación→Activación) — se detectó como regresión al correr
+// los tests existentes, no estaba en el informe de decisiones.
 function isExcessiveFatigue(
   microcycle: MicrocycleType,
   fcDelta?: number,
   hrvDelta?: number,
   subjective?: SubjectiveMetrics
 ): boolean {
+  const isLoadMicrocycle = microcycle === "Carga" || microcycle === "Impacto";
+  const fcExcessive =
+    isLoadMicrocycle && classifyAgainstRange(fcDelta, getFcTargetRange(microcycle)) === "por_encima";
+  const hrvExcessive =
+    isLoadMicrocycle &&
+    toFatigueAxis(classifyAgainstRange(hrvDelta, getHrvTargetRange(microcycle)), true) === "por_encima";
+
   return (
-    (isNumber(fcDelta) && fcDelta > 18 && (microcycle === "Carga" || microcycle === "Impacto")) ||
-    (isNumber(hrvDelta) && hrvDelta < -30) ||
+    fcExcessive ||
+    hrvExcessive ||
     (isNumber(subjective?.discomfort) && subjective.discomfort >= 8) ||
     (isNumber(subjective?.musclePain) && subjective.musclePain >= 8) ||
     (isNumber(subjective?.fatigue) && subjective.fatigue >= 8)
@@ -363,28 +486,6 @@ const MICROCYCLE_SEQUENCE: MicrocycleType[] = [
   "Activacion",
   "Competitivo",
 ];
-
-interface MicrocycleBlock {
-  microcycle: MicrocycleType;
-  records: DailyRecord[];
-}
-
-function getMicrocycleBlocks(history: DailyRecord[]): MicrocycleBlock[] {
-  const sorted = [...history]
-    .filter((record) => !!record.microcycle)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const blocks: MicrocycleBlock[] = [];
-  for (const record of sorted) {
-    const last = blocks[blocks.length - 1];
-    if (last && last.microcycle === record.microcycle) {
-      last.records.push(record);
-    } else {
-      blocks.push({ microcycle: record.microcycle as MicrocycleType, records: [record] });
-    }
-  }
-  return blocks;
-}
 
 function averageField(
   records: DailyRecord[],
@@ -645,6 +746,14 @@ function evaluateLevel3(history: DailyRecord[]): Level3Result {
 // Nivel 1 + ensamblado final
 // ---------------------------------------------------------------------------
 
+interface StateResolution {
+  state: ATRState;
+  // Bug D: mensajes de confianza/datos faltantes que no encajan en el
+  // switch normal (ej. "Supercompensación no evaluable"). Se fusionan con
+  // el array de alertas general en evaluateATR.
+  extraAlerts: string[];
+}
+
 function mapDissonanceToState(
   microcycle: MicrocycleType,
   dissonanceLabel: string | undefined,
@@ -652,19 +761,37 @@ function mapDissonanceToState(
   hrvDelta?: number,
   borg?: number,
   subjective?: SubjectiveMetrics
-): ATRState {
+): StateResolution {
   const borgRange = getBorgExpectedRange(microcycle);
   const borgOk = withinRange(borg, borgRange);
 
   if (microcycle === "Competitivo" && dissonanceLabel === "Mas fresco de lo esperado") {
-    if (isSupercompensationCoherent(fcDelta, hrvDelta, subjective)) {
-      return "Supercompensacion";
+    const supercompensation = evaluateSupercompensation(fcDelta, hrvDelta, borg, subjective);
+    switch (supercompensation.status) {
+      case "coherent":
+        return {
+          state: "Supercompensacion",
+          extraAlerts:
+            supercompensation.missingSupporting.length > 0
+              ? [
+                  `Supercompensación con confianza parcial — faltan o no llegan al óptimo: ${supercompensation.missingSupporting.join(", ")}. El análisis sería más completo con esos datos.`,
+                ]
+              : [],
+        };
+      case "not_evaluable":
+        return {
+          state: "Recuperacion adecuada",
+          extraAlerts: [
+            `No evaluable como Supercompensación por falta de dato clave: ${supercompensation.missingMandatory.join(", ")}.`,
+          ],
+        };
+      case "not_coherent":
+        return { state: "Recuperacion adecuada", extraAlerts: [] };
     }
-    return "Recuperacion adecuada";
   }
 
   if (isExcessiveFatigue(microcycle, fcDelta, hrvDelta, subjective)) {
-    return "Fatiga excesiva";
+    return { state: "Fatiga excesiva", extraAlerts: [] };
   }
 
   switch (dissonanceLabel) {
@@ -674,29 +801,33 @@ function mapDissonanceToState(
       const hrvRange = getHrvTargetRange(microcycle);
       const withinFunctionalBand =
         withinRange(fcDelta, fcRange) && withinRange(hrvDelta, hrvRange) && borgOk;
-      return withinFunctionalBand ? "Fatiga funcional" : "Fatiga excesiva";
+      return { state: withinFunctionalBand ? "Fatiga funcional" : "Fatiga excesiva", extraAlerts: [] };
     }
     case "Estimulo insuficiente":
-      return "Preparacion insuficiente";
+      return { state: "Preparacion insuficiente", extraAlerts: [] };
     case "Alerta subjetiva temprana":
     case "Disonancia inversa":
-      return "Fatiga funcional";
+      return { state: "Fatiga funcional", extraAlerts: [] };
     case "Dentro de lo esperado":
       // En Carga/Impacto, "dentro del rango esperado" ES la zona de fatiga
       // funcional por diseño (Motor ATR §1.2/§1.3) — no es un estado neutro
       // como en el resto de microciclos.
-      return microcycle === "Carga" || microcycle === "Impacto"
-        ? "Fatiga funcional"
-        : "Recuperacion adecuada";
+      return {
+        state:
+          microcycle === "Carga" || microcycle === "Impacto"
+            ? "Fatiga funcional"
+            : "Recuperacion adecuada",
+        extraAlerts: [],
+      };
     case "Mas fresco de lo esperado":
-      return "Recuperacion adecuada";
+      return { state: "Recuperacion adecuada", extraAlerts: [] };
     default:
-      return "Pendiente de evaluacion";
+      return { state: "Pendiente de evaluacion", extraAlerts: [] };
   }
 }
 
 export function evaluateATR(input: ATRInput): ATRInterpretation {
-  const { microcycle, baseline, health, subjective, training, history } = input;
+  const { microcycle, baseline, health, subjective, training, history, coach } = input;
 
   if (!microcycle) {
     return {
@@ -737,7 +868,16 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
   // Capa 3
   const dissonanceLabel = crossPhysiologicalSubjective(microcycle, physiological.status, subjectiveStatus);
 
-  let state = mapDissonanceToState(microcycle, dissonanceLabel, fcDelta, hrvDelta, borg, subjective);
+  const stateResolution = mapDissonanceToState(
+    microcycle,
+    dissonanceLabel,
+    fcDelta,
+    hrvDelta,
+    borg,
+    subjective
+  );
+  let state = stateResolution.state;
+  alerts.push(...stateResolution.extraAlerts);
 
   // Nivel 2 — puede promover el estado final (Motor ATR §5.2: "alimentan
   // directamente los estados Preparación insuficiente y Fatiga excesiva").
@@ -752,6 +892,21 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
         state = "Preparacion insuficiente";
         alerts.push(level2.note ?? "Nivel 2: transición no ocurrió como se esperaba.");
       }
+    }
+  }
+
+  // Capa 4 — Entrenador (Motor ATR §6). Bug C: la técnica OBSERVADA por el
+  // entrenador (a diferencia de la autoreportada, ver Capa 2 arriba) puede
+  // reforzar/disparar una bandera de disonancia -- no tiene veto pleno
+  // (§6, nota: sin escala numérica estandarizada todavía), así que solo
+  // escala Fatiga funcional -> Fatiga excesiva, nunca degrada un estado ya
+  // peor ni mejora uno ya mejor. El rol general de "anular vs. matizar" del
+  // entrenador (§14.3) sigue sin resolver — esto cubre solo el caso
+  // específico de técnica que el informe de decisiones 2026-07-20 resolvió.
+  if (isNumber(coach?.technique) && coach.technique <= 2) {
+    alerts.push("El entrenador reporta técnica muy deteriorada (observación directa, Capa 4).");
+    if (state === "Fatiga funcional") {
+      state = "Fatiga excesiva";
     }
   }
 
@@ -792,6 +947,18 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
     alerts.push(`Carga interna calculada: ${Math.round(internalLoad)}.`);
   }
 
+  // Métrica nueva — Recuperación Autonómica Post-Entreno (informe de
+  // decisiones 2026-07-20). Nivel 1 es solo observación (nunca toca
+  // `state`); Nivel 2 solo agrega una alerta temprana si hay deterioro
+  // progresivo dentro del bloque actual, tampoco cambia `state`.
+  const postWorkoutObservation = observePostWorkoutRecovery({ health }, baseline);
+  const postWorkoutTrend = history
+    ? evaluatePostWorkoutTrend(microcycle, history, baseline)
+    : undefined;
+  if (postWorkoutTrend?.evaluated && postWorkoutTrend.deteriorating) {
+    alerts.push(postWorkoutTrend.note);
+  }
+
   return {
     state,
     message,
@@ -805,6 +972,8 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
     dissonanceLabel,
     level2,
     level3,
+    postWorkoutObservation,
+    postWorkoutTrend,
   };
 }
 

@@ -55,6 +55,22 @@ export interface Level3Result {
   note: string;
 }
 
+// Métrica nueva (informe de decisiones 2026-07-20) -- observación de Nivel 1
+// (día a día, nunca dispara estado) y tendencia de Nivel 2 (dentro del
+// bloque actual). Ver src/engine/postWorkoutEngine.ts.
+export interface PostWorkoutObservation {
+  fcDelta?: number;
+  hrvDelta?: number;
+}
+
+export interface PostWorkoutTrendResult {
+  evaluated: boolean;
+  validReadingsForType: number;
+  minimumRequired: number;
+  deteriorating?: boolean;
+  note: string;
+}
+
 export interface ATRInterpretation {
   state: ATRState;
   message?: string;
@@ -65,6 +81,8 @@ export interface ATRInterpretation {
   dissonanceLabel?: string;
   level2?: Level2Result;
   level3?: Level3Result;
+  postWorkoutObservation?: PostWorkoutObservation;
+  postWorkoutTrend?: PostWorkoutTrendResult;
 }
 
 export interface ATRInput {

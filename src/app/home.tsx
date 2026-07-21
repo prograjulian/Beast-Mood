@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import { describeExpectedVsActual, evaluateATR } from "../engine/atrEngine";
+import { calculateHealthBaseline } from "../engine/baselineEngine";
 import type { ATRInterpretation, MicrocycleType } from "../model/athletedata/atr";
 import {
   emptyHealthBaseline,
@@ -24,6 +25,7 @@ import {
   getDailyHistory,
   getHealthBaseline,
   saveDailyRecord,
+  saveHealthBaseline,
 } from "../repository/metricsRepository";
 import { getAthleteProfile } from "../services/storage";
 
@@ -77,7 +79,22 @@ export default function HomeScreen() {
 
         const latestRecord = history.length > 0 ? history[history.length - 1] : null;
 
-        const nextBaseline = storedBaseline ?? emptyHealthBaseline;
+        // Bug B.2 (informe de decisiones 2026-07-20): baseline con ventana
+        // móvil de 7 días, calculado a partir del historial real en vez de
+        // depender de un valor guardado manualmente. Si la ventana no tiene
+        // suficientes lecturas válidas, calculateHealthBaseline devuelve el
+        // baseline anterior sin cambios (no lo sobreescribe con un promedio
+        // poco confiable).
+        const asOfDate = latestRecord?.date ?? new Date().toISOString().slice(0, 10);
+        const nextBaseline = calculateHealthBaseline(
+          history,
+          asOfDate,
+          storedBaseline ?? emptyHealthBaseline
+        );
+        if (nextBaseline !== storedBaseline) {
+          await saveHealthBaseline(storedProfile.id, nextBaseline);
+        }
+
         const nextSnapshot = latestRecord?.health ?? {};
         const nextSubjective = latestRecord?.subjective ?? {};
         const nextTraining = latestRecord?.training ?? {};
