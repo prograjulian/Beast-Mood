@@ -513,8 +513,9 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.container}>
           <Text style={styles.brand}>REGISTRO DIARIO</Text>
           <Text style={styles.subtitle}>
-            El estado general se responde con botones. FC/HRV se ingresan a mano mientras no exista
-            integración con Apple Health — la lógica ATR interpreta todo según el microciclo.
+            El estado general se responde con botones. FC/HRV se pueden tipear a mano o traerse ya
+            cargados desde un Atajo de Salud (ver &ldquo;health-import&rdquo;) — la lógica ATR
+            interpreta todo según el microciclo.
           </Text>
 
           <View style={styles.card}>
@@ -548,7 +549,7 @@ export default function RegisterScreen() {
           <View style={styles.card}>
             <SectionTitle
               title="Lectura matutina en reposo"
-              subtitle="La única lectura que alimenta la Capa 1 del motor ATR. Manual mientras no exista Apple Health."
+              subtitle="La única lectura que alimenta la Capa 1 del motor ATR. Precargada si viniste de un Atajo de Salud, editable siempre."
             />
             <NumericField
               label="FC reposo (lpm)"

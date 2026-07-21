@@ -77,7 +77,13 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-21 — quinta ronda del día: mensaje de arranque en frío (§1.8),
+> Última actualización: 2026-07-21 — séptima ronda del día: nueva ruta `health-import.tsx`
+> (deep link `beastmoodapp://health-import?fc=...&hrv=...&sleep=...`) para importar datos del
+> Apple Watch vía un Atajo de iOS, sin HealthKit nativo ni cuenta Apple Developer de pago (el
+> usuario tiene iPhone pero no cuenta Developer). Ver la séptima entrada de sesión 2026-07-21 en
+> sección 6 para el detalle y el paso a paso del Atajo. Repo en GitHub.
+> Sexta ronda del mismo día: exclusión de outliers del baseline con mediana+MAD.
+> Quinta ronda del día: mensaje de arranque en frío (§1.8),
 > comparación secundaria "vs. día anterior", estructura drill-down con veto visual de dolor, escala
 > de Borg CR-10 oficial, y toggle Vista Entrenador/Atleta que por fin APLICA la exclusión de "Listo
 > para competir" en vez de solo dejarla comentada — implementa la sección 5 punto 13 completa
@@ -278,10 +284,22 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     (§6, ni `CoachMetrics` tiene pantalla que lo capture todavía).
 - [x] ~~Hallazgo crítico — violación del principio "no negociable" de persistencia longitudinal~~
       **resuelto el 2026-07-16**, ver primer punto de esta sección para el detalle.
-- [x] Integración Apple Health (`src/services/health/*.ts`: appleHealth, healthConnect,
-      healthService, mapper, permissions) — **archivos vacíos (0 líneas), aún no arrancada**.
-      Coherente con el roadmap declarado (System Prompt §4/§6: Apple Health → BD → historial →
-      dashboard → IA), no es un desvío, solo el siguiente paso pendiente.
+- [x] Integración Apple Health nativa (`src/services/health/*.ts`: appleHealth, healthConnect,
+      healthService, mapper, permissions) — **archivos vacíos (0 líneas), sigue sin arrancar**.
+      Bloqueada por costo real, no por falta de tiempo: HealthKit nativo requiere una build con
+      módulo nativo (EAS Build + cuenta Apple Developer, $99/año) — el usuario tiene iPhone pero no
+      esa cuenta todavía. **Mientras tanto, resuelto por otra vía el 2026-07-21:** nueva ruta
+      `src/app/health-import.tsx`, deep link (`beastmoodapp://health-import?fc=...&hrv=...
+      &sleep=...`) que un Atajo de iOS (Shortcuts, nativo de Apple, sin costo ni módulos nativos)
+      puede abrir después de leer la app de Salud (que ya recibe los datos reales del Apple Watch).
+      Escribe en el slot `saveLiveHealthSnapshot` que ya existía sin productor (ver más abajo,
+      "arranque en frío" del historial) — `register.tsx` ya leía de ahí, no hubo que tocarlo. No es
+      HealthKit nativo (sin sync en segundo plano, requiere que el Atajo corra, manual o
+      automatizado por horario) pero resuelve el objetivo real (dejar de tipear FC/HRV/sueño a
+      mano) sin el bloqueo de costo. Ver sección 6, séptima entrada 2026-07-21, para el detalle y el
+      paso a paso del Atajo. Cuando el usuario resuelva la cuenta Apple Developer, HealthKit nativo
+      puede construirse aparte SIN romper esto (deep link y HealthKit no son mutuamente excluyentes,
+      pueden convivir).
 - [x] `athleteRepository.ts` también vacío (0 líneas).
 - [x] ~~No hay separación Dashboard Atleta / Dashboard Entrenador~~ **parcialmente resuelto el
       2026-07-21** — `home.tsx` gana un toggle de UI "Vista Entrenador / Vista Atleta" (`viewMode`)
@@ -758,6 +776,34 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   Perfil Competitivo Individual, backend/proxy de IA, o separación real de dashboards) — el
   proyecto ya no tiene pendientes triviales sueltos, lo que queda son piezas grandes que requieren
   o bien infraestructura externa (Apple Health, Firebase) o bien confirmación del entrenador.
+- **2026-07-21 (séptima ronda, mismo día)** — El usuario pidió avanzar con la integración de Apple
+  Health. Antes de escribir código se le preguntó por su entorno (Windows, sin Mac) porque cambia
+  radicalmente el plan: HealthKit nativo necesita compilar con un módulo nativo (`expo prebuild` +
+  EAS Build), y sin Mac la única forma de instalar ese build en un iPhone es con cuenta Apple
+  Developer de pago ($99/año) — se confirmó con `WebSearch` que el modo gratuito de Apple
+  ("Personal Team" en Xcode) EXISTE pero también requiere Mac (son dos requisitos independientes,
+  no uno solo), así que no hay forma de evitar los dos sin Mac. El usuario tiene iPhone pero no
+  cuenta Apple Developer, y preguntó si había alguna forma de conectar el Apple Watch sin pagar.
+  **Sí la hay, y es lo que se implementó:** Shortcuts (Atajos, app nativa de iOS, sin costo) puede
+  leer datos de la app de Salud (que ya recibe todo lo del Apple Watch) y abrir un deep link de la
+  app — sin HealthKit nativo, sin Xcode, sin salir de Expo Go. Nueva ruta
+  `src/app/health-import.tsx`: parsea `?fc=...&hrv=...&sleep=...&activity=...` de la URL
+  `beastmoodapp://health-import`, valida cada valor contra un rango fisiológicamente plausible (FC
+  20-250, HRV 0-300, sueño 0-24h, actividad 0-1440min — a diferencia de un formulario tipeado a
+  mano, esto viene de una URL externa, así que un valor absurdo no debe colarse en silencio; hallazgo
+  de `code-reviewer`, corregido antes de cerrar con una advertencia visible de qué campo se
+  ignoró), y lo guarda en `saveLiveHealthSnapshot` — el mismo slot "live" que ya existía sin
+  productor desde la ronda del 2026-07-21 anterior (cuarta ronda). `register.tsx` YA leía de ese
+  slot al cargar y precargaba los campos editables, así que no hizo falta tocarlo más que
+  actualizar dos textos de ayuda que mencionaban "Apple Health" de forma desactualizada. Verificado
+  en el navegador: import válido precarga `register.tsx` correctamente; sin params muestra "No se
+  recibieron datos válidos" sin crashear; un valor fuera de rango (fc=9999) se ignora con aviso
+  visible, el resto de campos válidos sí se guardan. No reemplaza el plan original de HealthKit
+  nativo (sección 3) -- queda documentado en sección 4 como la vía intermedia mientras no se
+  resuelva la cuenta Apple Developer; ambos pueden convivir más adelante. `npx tsc --noEmit`,
+  `npm run lint`, `npm test` (100/100) limpios, revisado por `code-reviewer`. Próximo paso: el
+  usuario arma el Atajo en su iPhone (instrucciones dadas en el chat, no en este archivo) y lo
+  prueba con la app real (no solo el navegador) — pendiente de confirmar en un dispositivo real.
 
 ---
 
