@@ -96,6 +96,22 @@ export interface ReadinessEvaluation {
  */
 export type ConfidenceLevel = "Alta" | "Media" | "Baja";
 
+/**
+ * Índice de Riesgo de Lesión (informe de decisiones 2026-07-21, resuelve
+ * Motor ATR §11.2). NO es un 6to estado (§11.6: "indicador ortogonal y
+ * continuo que puede acompañar a cualquiera de los 5 estados"). Ver
+ * src/engine/injuryRiskEngine.ts.
+ */
+export type InjuryRiskLevel = "Bajo" | "Moderado" | "Alto" | "Critico";
+
+export interface InjuryRiskEvaluation {
+  level?: InjuryRiskLevel;
+  message?: string;
+  sustainedDays: number;
+  historicalComparisonAvailable: boolean;
+  worseThanHistoricalPattern?: boolean;
+}
+
 export interface ATRInterpretation {
   state: ATRState;
   message?: string;
@@ -110,6 +126,7 @@ export interface ATRInterpretation {
   postWorkoutTrend?: PostWorkoutTrendResult;
   competitionReadiness?: ReadinessEvaluation;
   confidenceLevel?: ConfidenceLevel;
+  injuryRisk?: InjuryRiskEvaluation;
 }
 
 export interface ATRInput {

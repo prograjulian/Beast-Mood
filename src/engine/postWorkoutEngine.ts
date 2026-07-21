@@ -1,7 +1,8 @@
-import type { MicrocycleType } from "../model/athletedata/atr";
+import type { MicrocycleType, PostWorkoutObservation, PostWorkoutTrendResult } from "../model/athletedata/atr";
 import type { DailyRecord } from "../model/athletedata/dailyRecord";
 import type { HealthBaseline } from "../model/athletedata/health";
 import { getMicrocycleBlocks } from "./microcycleBlocks";
+import { isNumber, percentChange } from "./physiologicalRanges";
 
 /**
  * Recuperación Autonómica Post-Entreno -- métrica nueva (informe de
@@ -10,15 +11,6 @@ import { getMicrocycleBlocks } from "./microcycleBlocks";
  * distinta de la basal matutina: cómo está tolerando el cuerpo la carga del
  * día, no el estado de reposo general.
  */
-
-function isNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function percentChange(current?: number, baseline?: number): number | undefined {
-  if (!isNumber(current) || !isNumber(baseline) || baseline === 0) return undefined;
-  return ((current - baseline) / baseline) * 100;
-}
 
 // Ventana de captura declarada en el informe: 2h ±15min post-entreno. Fuera
 // de esa ventana, la lectura no cuenta para esta métrica ese día.
@@ -31,11 +23,6 @@ export function isWithinCaptureWindow(minutesAfterWorkout?: number): boolean {
     minutesAfterWorkout >= CAPTURE_WINDOW_MINUTES - CAPTURE_WINDOW_TOLERANCE_MINUTES &&
     minutesAfterWorkout <= CAPTURE_WINDOW_MINUTES + CAPTURE_WINDOW_TOLERANCE_MINUTES
   );
-}
-
-export interface PostWorkoutObservation {
-  fcDelta?: number;
-  hrvDelta?: number;
 }
 
 /**
@@ -68,14 +55,6 @@ const COLD_START_FLOOR_READINGS = 5;
 // Cuántas lecturas post-entreno dentro del bloque ACTUAL hacen falta para
 // poder hablar de una "tendencia" en vez de solo puntos sueltos.
 const MIN_READINGS_FOR_TREND = 3;
-
-export interface PostWorkoutTrendResult {
-  evaluated: boolean;
-  validReadingsForType: number;
-  minimumRequired: number;
-  deteriorating?: boolean;
-  note: string;
-}
 
 /**
  * Nivel 2 (tendencia, donde esta métrica tiene valor real según el informe

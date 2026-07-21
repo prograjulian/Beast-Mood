@@ -92,7 +92,9 @@ describe("buildExplanationPayload", () => {
       subjective: { legFeeling: 5 },
       training: { borgCR10: 3 },
     });
-    const payload = buildExplanationPayload(interpretation, "Ajuste", "me sentí como un campeón hoy");
+    const payload = buildExplanationPayload(interpretation, "Ajuste", {
+      athleteComment: "me sentí como un campeón hoy",
+    });
     expect(payload.athleteComment).toBe("me sentí como un campeón hoy");
     expect(payload.outcomeKey).toBe("Dentro de lo esperado");
   });
@@ -107,5 +109,53 @@ describe("buildExplanationPayload", () => {
     });
     const payload = buildExplanationPayload(interpretation, "Carga");
     expect(payload.variablesResponsible).toBe(interpretation.alerts);
+  });
+
+  test('audience "athlete" -- NUNCA incluye readiness, aunque exista competitionReadiness (guardrail no negociable)', () => {
+    const interpretation = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: { restingHeartRate: pct(50, -3), hrv: pct(100, 12) },
+      subjective: { legFeeling: 9, techniqueQuality: 5, explosiveness: 9, speedReaction: 9, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+    });
+    expect(interpretation.competitionReadiness?.status).toBe("not_ready"); // sí se evaluó
+    const payload = buildExplanationPayload(interpretation, "Competitivo", { audience: "athlete" });
+    expect(payload.readiness).toBeUndefined();
+  });
+
+  test('audience "coach" (default) -- sí incluye readiness cuando se evaluó', () => {
+    const interpretation = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: { restingHeartRate: pct(50, -3), hrv: pct(100, 12) },
+      subjective: { legFeeling: 9, techniqueQuality: 5, explosiveness: 9, speedReaction: 9, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+    });
+    const payload = buildExplanationPayload(interpretation, "Competitivo");
+    expect(payload.readiness).toBeDefined();
+  });
+
+  test('coachShareableNote solo se adjunta cuando audience es "athlete"', () => {
+    const interpretation = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: { restingHeartRate: pct(50, 10), hrv: pct(100, -7) },
+      subjective: { legFeeling: 5 },
+      training: { borgCR10: 3 },
+    });
+    const forAthlete = buildExplanationPayload(interpretation, "Ajuste", {
+      audience: "athlete",
+      coachShareableNote: "Cuidado con el pie de apoyo en la salida.",
+    });
+    expect(forAthlete.coachShareableNote).toBe("Cuidado con el pie de apoyo en la salida.");
+
+    const forCoach = buildExplanationPayload(interpretation, "Ajuste", {
+      audience: "coach",
+      coachShareableNote: "Cuidado con el pie de apoyo en la salida.",
+    });
+    expect(forCoach.coachShareableNote).toBeUndefined();
   });
 });

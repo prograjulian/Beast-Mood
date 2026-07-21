@@ -101,37 +101,59 @@ export interface ExplanationPayload {
   variablesResponsible: string[];
   trendNote?: string;
   confidenceLevel: "Alta" | "Media" | "Baja";
-  // Solo presente cuando se evaluó (microciclo Competitivo). Coach-only por
-  // decisión de producto -- ver ATRInterpretation.competitionReadiness.
+  // Solo presente cuando audience==="coach" Y se evaluó (microciclo
+  // Competitivo). Coach-only por decisión de producto -- ver
+  // ATRInterpretation.competitionReadiness. NUNCA presente cuando
+  // audience==="athlete" (guardrail del futuro chat "Entrenador IA",
+  // informe de decisiones 2026-07-21: "nunca revela el veredicto de
+  // listo/no listo") -- se aplica aquí, en el paso determinístico, para no
+  // depender de que la capa de redacción (paso 2, sin implementar) lo
+  // recuerde.
   readiness?: ReadinessExplanation;
   // El comentario libre del atleta NUNCA alimenta el motor determinístico
   // (ya calculado arriba) -- solo se adjunta para que un paso 2 lo use como
   // contexto de redacción, tal como pide el informe de decisiones.
   athleteComment?: string;
+  // Nota del entrenador explícitamente marcada como compartible
+  // (CoachMetrics.shareableNote) -- nunca las notas privadas. Mismo
+  // principio que athleteComment: solo contexto de redacción, no mueve el
+  // motor determinístico.
+  coachShareableNote?: string;
+}
+
+export interface BuildExplanationPayloadOptions {
+  // Para quién es este payload -- decide si `readiness` puede incluirse.
+  // Default "coach" (uso actual en home.tsx). El futuro chat "Entrenador
+  // IA" del atleta DEBE pasar "athlete" explícitamente.
+  audience?: "coach" | "athlete";
+  athleteComment?: string;
+  coachShareableNote?: string;
 }
 
 export function buildExplanationPayload(
   interpretation: ATRInterpretation,
   microcycle: MicrocycleType,
-  athleteComment?: string
+  options: BuildExplanationPayloadOptions = {}
 ): ExplanationPayload {
+  const { audience = "coach", athleteComment, coachShareableNote } = options;
   const outcomeKey = resolveOutcomeKey(interpretation.state, interpretation.dissonanceLabel, microcycle);
 
-  const readiness = interpretation.competitionReadiness
-    ? {
-        status: interpretation.competitionReadiness.status,
-        action: READINESS_ACTIONS[interpretation.competitionReadiness.status],
-        details:
-          interpretation.competitionReadiness.status === "not_ready"
-            ? [
-                ...interpretation.competitionReadiness.blockedBy,
-                ...interpretation.competitionReadiness.failedMandatory,
-              ]
-            : interpretation.competitionReadiness.status === "not_evaluable"
-              ? interpretation.competitionReadiness.missingMandatory
-              : interpretation.competitionReadiness.supportingConcerns,
-      }
-    : undefined;
+  const readiness =
+    audience === "coach" && interpretation.competitionReadiness
+      ? {
+          status: interpretation.competitionReadiness.status,
+          action: READINESS_ACTIONS[interpretation.competitionReadiness.status],
+          details:
+            interpretation.competitionReadiness.status === "not_ready"
+              ? [
+                  ...interpretation.competitionReadiness.blockedBy,
+                  ...interpretation.competitionReadiness.failedMandatory,
+                ]
+              : interpretation.competitionReadiness.status === "not_evaluable"
+                ? interpretation.competitionReadiness.missingMandatory
+                : interpretation.competitionReadiness.supportingConcerns,
+        }
+      : undefined;
 
   return {
     microcycle,
@@ -142,5 +164,6 @@ export function buildExplanationPayload(
     confidenceLevel: interpretation.confidenceLevel ?? "Baja",
     readiness,
     athleteComment,
+    coachShareableNote: audience === "athlete" ? coachShareableNote : undefined,
   };
 }

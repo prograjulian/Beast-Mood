@@ -233,6 +233,11 @@ export default function HomeScreen() {
               Confianza del análisis: {atr.confidenceLevel}
             </Text>
           ) : null}
+          {atr.injuryRisk?.level && atr.injuryRisk.level !== "Bajo" ? (
+            <Text style={[styles.hint, { marginTop: 4, color: "#FFB3C1" }]}>
+              Riesgo de lesión: {atr.injuryRisk.level}
+            </Text>
+          ) : null}
 
           <View style={styles.atrSpacer} />
 

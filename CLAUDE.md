@@ -77,11 +77,28 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-21 — segunda ronda de decisiones del entrenador el mismo día:
-> "Listo para competir" (estado nuevo, distinto de Supercompensación), Índice de Confianza del
-> Análisis, motor de explicación generalizado (paso determinístico) y disonancia texto-vs-número
-> del comentario libre. Ver las dos entradas de sesión 2026-07-21 en sección 6 para el detalle
-> completo. Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+> Última actualización: 2026-07-21 — tercera ronda de decisiones del entrenador el mismo día:
+> Índice de Riesgo de Lesión (IRL, resuelve §11.2) y modelo de notas privadas/compartibles del
+> entrenador. Ver las tres entradas de sesión 2026-07-21 en sección 6 para el detalle completo.
+> Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+
+- [x] **Resuelto — tercera ronda de decisiones 2026-07-21: Índice de Riesgo de Lesión (IRL) y
+      notas privadas/compartibles del entrenador.** Ver la tercera entrada de sesión 2026-07-21
+      (sección 6). Resumen: nuevo `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`), árbol
+      de decisión acumulativo de 4 niveles (Bajo/Moderado/Alto/Crítico) gateado por dolor/molestia
+      presente — resuelve CLAUDE.md §5 punto 8 y Motor ATR §11.2. Refactor de apoyo: se extrajeron
+      las tablas de rango FC/HRV/Borg y las funciones de Capa 1 a
+      `src/engine/physiologicalRanges.ts` (compartido entre `atrEngine.ts` e
+      `injuryRiskEngine.ts`, evita duplicar datos de dominio reales en dos archivos); de paso se
+      corrigió una duplicación de tipos ya existente de la ronda anterior
+      (`PostWorkoutObservation`/`PostWorkoutTrendResult` declarados dos veces, en
+      `postWorkoutEngine.ts` y en `atr.ts` — ahora `postWorkoutEngine.ts` importa del modelo).
+      `CoachMetrics` gana `shareableNote` (separado de `coachNotes`, que sigue siendo privado por
+      defecto). `buildExplanationPayload` (motor de explicación) gana un parámetro `audience`
+      ("coach" por defecto | "athlete") que EXCLUYE `readiness` del payload cuando es "athlete" —
+      el guardrail de "nunca revela listo/no listo al atleta" queda aplicado en el paso
+      determinístico, no depende de que un futuro paso 2 lo recuerde. 89/89 tests (10 nuevos),
+      `tsc`/`eslint` limpios.
 
 - [x] **Resuelto — segunda ronda de decisiones 2026-07-21: "Listo para competir", Índice de
       Confianza, motor de explicación, disonancia texto-vs-número.** Ver la segunda entrada de
@@ -283,8 +300,14 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
    implementado, no inventado.
 7. Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual
    (Motor ATR sección 13) tome precedencia sobre el perfil genérico (propuesta a validar: 3–5 podios).
-8. Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
-   numéricos entre Bajo/Moderado/Alto/Crítico.
+8. ~~Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
+   numéricos entre Bajo/Moderado/Alto/Crítico~~ **resuelto el 2026-07-21** — árbol de decisión
+   acumulativo en `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`). Dos números elegidos por
+   Claude sin confirmación explícita del entrenador (documentados como provisionales en el código):
+   el piso de "dolor/molestia leve presente" (≥3, mismo valor que "Leve" en las opciones de
+   captura) y el umbral de "por debajo de lo esperado" por variable de rendimiento (reusa los
+   mismos números que ya usa Capa 2 — 4 en Carga/Impacto, 5 en el resto — para no inventar un
+   tercer criterio de declive distinto en el motor).
 9. Confirmar si las "Alertas" del Dashboard Entrenador son exactamente los 4 tipos de la
    sección 11.4 del Motor ATR, o si hay tipos adicionales.
 10. Fórmula exacta de "deterioro progresivo" para la Recuperación Autonómica Post-Entreno (métrica
@@ -547,7 +570,46 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     el mecanismo trazable (regla explícita del informe de decisiones).
   Próximo paso sugerido: revisar con el entrenador, commitear/pushear. Después: decidir el diseño
   del backend/proxy para el paso 2 del motor de explicación (bloquea la redacción con IA), o seguir
-  con Apple Health / IRL / Perfil Competitivo Individual como en la ronda anterior.
+  con Apple Health / IRL / Perfil Competitivo Individual como en la ronda anterior. Commiteado y
+  pusheado (`52fbac7`), CI verde.
+- **2026-07-21 (tercera ronda, mismo día)** — Antes de esta ronda, el usuario pegó un tercer
+  documento que incluía una sección nueva de "Decisiones de Frontend/UX" (score único prohibido,
+  comparación de dos niveles con delta vs. día anterior, estructura drill-down con dolor como
+  excepción de veto visual, escala Borg CR-10 oficial, "Subcompensado" descartado, pestaña
+  "Entrenador IA" pendiente de confirmar) y pidió explícitamente **guardarlo para usar más
+  adelante, sin implementarlo todavía** — quedó completo en sección 5, punto 13, sin código
+  asociado. Luego llegó el resto de esa ronda con dos piezas sí listas para implementar:
+  - **Índice de Riesgo de Lesión (IRL)** (resuelve Motor ATR §11.2 y CLAUDE.md §5 punto 8): árbol
+    de decisión acumulativo de 4 niveles en `src/engine/injuryRiskEngine.ts`, gateado por dolor o
+    molestia presente (sin eso, IRL ni se evalúa — no es "Bajo", es "no aplica" ese día). Alto y
+    Crítico requieren confirmación adicional (sostenido N días consecutivos de la condición base,
+    o peor que el patrón histórico propio del atleta en ese tipo de microciclo — si no hay
+    historial previo de ese microciclo, esa comparación queda "no disponible" explícitamente,
+    nunca se asume cumplida ni incumplida). Mensaje nunca diagnóstico, ajustado por nivel. Dos
+    umbrales elegidos sin confirmación explícita del entrenador, documentados como tal en el
+    código y en sección 5 punto 8.
+  - **Refactor de apoyo, encontrado mientras se implementaba IRL:** las tablas de rango FC/HRV/Borg
+    y las funciones de Capa 1 (`classifyAgainstRange`, `toFatigueAxis`, etc.) se extrajeron de
+    `atrEngine.ts` a `src/engine/physiologicalRanges.ts` — `injuryRiskEngine.ts` las necesitaba y
+    duplicarlas habría sido un riesgo real de que las dos copias de datos de dominio (no solo
+    helpers triviales) se desincronizaran. De paso se encontró y corrigió una duplicación de tipos
+    ya existente de la ronda anterior: `PostWorkoutObservation`/`PostWorkoutTrendResult` estaban
+    declarados dos veces (en `postWorkoutEngine.ts` y en `atr.ts`) — no era un error de compilación
+    (TypeScript structural typing lo permite en silencio) pero sí un riesgo de divergencia futura;
+    ahora `postWorkoutEngine.ts` importa los tipos del modelo en vez de redeclararlos.
+  - **Notas del entrenador — privadas vs. compartibles:** `CoachMetrics` gana `shareableNote`
+    (separado de `coachNotes`, que sigue siendo privado por defecto). Al implementarlo se detectó
+    que `buildExplanationPayload` (motor de explicación de la ronda anterior) no tenía forma de
+    garantizar que el veredicto "listo/no listo" NUNCA llegara a un futuro chat del atleta — se
+    agregó un parámetro `audience` ("coach" default | "athlete") que excluye `readiness` del
+    payload cuando es "athlete", aplicando ese guardrail no negociable en el paso determinístico en
+    vez de confiar en que un futuro paso 2 (sin implementar) lo respete.
+  - **"Entrenador IA" (el chat en sí) NO se implementó** -- depende de la misma capa de redacción
+    con IA que ya se decidió diferir (sección 5, punto 12: no hay backend/proxy seguro). Solo se
+    dejó listo el modelo de datos (`shareableNote`) y el guardrail de audiencia.
+  89/89 tests (10 nuevos), `tsc`/`eslint` limpios. Próximo paso sugerido: revisar con el
+  entrenador, commitear/pushear; después retomar la sección 5 punto 13 (frontend/UX) cuando el
+  usuario lo pida, o seguir cerrando huecos (Perfil Competitivo Individual, backend/proxy de IA).
 
 ---
 
