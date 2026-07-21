@@ -112,6 +112,22 @@ export interface InjuryRiskEvaluation {
   worseThanHistoricalPattern?: boolean;
 }
 
+/**
+ * Comparación secundaria "vs. día anterior" (informe de decisiones
+ * 2026-07-21, sección 5 punto 13: "comparación de dos niveles, no uno").
+ * Puramente informativa -- a diferencia de la comparación primaria (contra
+ * baseline individual + tolerancia del microciclo, lo que decide `state`),
+ * esta NUNCA tiene semáforo/color propio ni puede mover el estado por sí
+ * sola. Solo da contexto de tendencia día a día.
+ */
+export interface PreviousDayComparison {
+  available: boolean;
+  restingHeartRateDelta?: number;
+  hrvDelta?: number;
+  sleepHoursDelta?: number;
+  note: string;
+}
+
 export interface ATRInterpretation {
   state: ATRState;
   message?: string;

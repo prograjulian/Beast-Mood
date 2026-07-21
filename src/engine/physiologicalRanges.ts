@@ -1,4 +1,5 @@
 import type { MicrocycleType, RangeStatus } from "../model/athletedata/atr";
+import type { SubjectiveMetrics } from "../model/athletedata/subjective";
 
 /**
  * Tablas de rango esperado por microciclo (Motor ATR §1.7) y las funciones
@@ -119,4 +120,21 @@ export function classifyAgainstRange(
 export function toFatigueAxis(raw: RangeStatus | undefined, invert: boolean): RangeStatus | undefined {
   if (!raw || raw === "dentro_de_rango" || !invert) return raw;
   return raw === "por_debajo" ? "por_encima" : "por_debajo";
+}
+
+// "Dolor/molestia leve presente" -- el informe de decisiones no da un
+// número, se usa el mismo piso que "Leve" en las opciones de captura de
+// register.tsx (PAIN_OPTIONS ya usa 1/3/5/7/9) -- provisional razonable, no
+// confirmado por el entrenador. Compartido entre injuryRiskEngine.ts (gate
+// del árbol de IRL) y la UI (home.tsx: el dolor elevado es la única
+// variable con veto visual, sube al resumen aunque el resto de variables
+// secundarias esté en el drill-down -- informe de decisiones 2026-07-21,
+// sección 5 punto 13).
+export const PAIN_PRESENT_THRESHOLD = 3;
+
+export function isPainElevated(subjective: SubjectiveMetrics): boolean {
+  return (
+    (isNumber(subjective.musclePain) && subjective.musclePain >= PAIN_PRESENT_THRESHOLD) ||
+    (isNumber(subjective.discomfort) && subjective.discomfort >= PAIN_PRESENT_THRESHOLD)
+  );
 }

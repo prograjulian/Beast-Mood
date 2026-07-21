@@ -77,11 +77,15 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-21 — `register.tsx` deja de depender de datos que nadie escribía
-> (Health en modo solo-lectura, CoachMetrics sin pantalla): ahora captura FC/HRV/sueño manuales,
-> post-entreno, pre-sueño, y las variables del entrenador con notas privadas/compartibles.
-> Verificado end-to-end en el navegador (`expo start --web`), no solo con tests. Ver la cuarta
-> entrada de sesión 2026-07-21 en sección 6. Repo ya en GitHub:
+> Última actualización: 2026-07-21 — quinta ronda del día: mensaje de arranque en frío (§1.8),
+> comparación secundaria "vs. día anterior", estructura drill-down con veto visual de dolor, escala
+> de Borg CR-10 oficial, y toggle Vista Entrenador/Atleta que por fin APLICA la exclusión de "Listo
+> para competir" en vez de solo dejarla comentada — implementa la sección 5 punto 13 completa
+> (frontend/UX) que había quedado guardada sin codificar en la ronda anterior. También se confirmó
+> (sin cambio de código, ya coincidía) el fundamento de literatura para los umbrales de días del
+> IRL, y se recibió la spec completa de "Entrenador IA" (sigue bloqueada por falta de
+> backend/proxy, sección 5 punto 12). Verificado end-to-end en el navegador. Ver la cuarta y quinta
+> entrada de sesión 2026-07-21 en sección 6. Repo en GitHub:
 > https://github.com/prograjulian/Beast-Mood
 
 - [x] **Resuelto — captura de datos real en `register.tsx` (2026-07-21).** Hasta esta sesión, todo
@@ -279,25 +283,27 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       Coherente con el roadmap declarado (System Prompt §4/§6: Apple Health → BD → historial →
       dashboard → IA), no es un desvío, solo el siguiente paso pendiente.
 - [x] `athleteRepository.ts` también vacío (0 líneas).
-- [ ] **No hay separación Dashboard Atleta / Dashboard Entrenador (Documento Maestro §6) — ahora
-      con una consecuencia concreta, no solo de UX.** `home.tsx` es una única pantalla que muestra
-      HRV/FC crudos, alertas técnicas y, desde el 2026-07-21, el veredicto "Listo para competir"
-      a cualquiera que la abra. Ese veredicto está explícitamente decidido como exclusivo del
-      entrenador (efecto nocebo documentado, ver sección 6). Mientras no exista la vista de atleta
-      separada, construir esa vista DEBE excluir la card "Listo para competir" — quedó comentado
-      así en el código (`home.tsx`), pero es una regla real pendiente de aplicar, no un detalle
-      cosmético.
+- [x] ~~No hay separación Dashboard Atleta / Dashboard Entrenador~~ **parcialmente resuelto el
+      2026-07-21** — `home.tsx` gana un toggle de UI "Vista Entrenador / Vista Atleta" (`viewMode`)
+      que oculta la card "Listo para competir" en modo Atleta (antes solo era un comentario sin
+      aplicar en código). Es explícitamente un filtro de PRESENTACIÓN, no una separación real de
+      pantallas/rutas ni un límite de seguridad (el proyecto sigue en fase single-user, sin
+      auth/roles, CLAUDE.md §0) — sigue sin existir una pantalla de atleta genuinamente separada
+      (ruta propia, contenido propio más allá de ocultar una card). Cuando exista multi-usuario
+      real, este toggle debe reemplazarse por una separación real, no solo ampliarse.
 - [x] ~~`CoachMetrics` existe como modelo (guardado/leído) pero ninguna pantalla lo captura
       todavía~~ **resuelto el 2026-07-21** — se captura en una card dedicada dentro de
       `register.tsx` ("Entrenador (uso del staff)"). Sigue sin existir una pantalla SEPARADA para
       el entrenador (eso es la separación de dashboards, bullet de arriba, un gap distinto).
 - [ ] No existe "procedencia del dato" (medido/reportado/ausente). ~~Índice de Confianza del
       Análisis~~ **implementado el 2026-07-21**, ver sección 5.
-- [ ] No hay mensaje de arranque en frío ("Recolectando datos para dar un análisis concreto",
-      §1.8) cuando falta baseline — la UI solo deja `expectedVsActualReady` en `false` sin
-      mostrar ese mensaje específico. **Reconfirmado el 2026-07-21** probando la app real sin
-      historial: el mensaje que se ve es el genérico "Pendiente de evaluación.", no el texto
-      específico de §1.8 — sigue siendo el gap real, no solo teórico.
+- [x] ~~No hay mensaje de arranque en frío (§1.8) cuando falta baseline~~ **resuelto el 2026-07-21**
+      — `atrEngine.ts` ahora distingue, dentro del `default` de `mapDissonanceToState`, si la causa
+      es específicamente falta de baseline (`fcBaseline`/`hrvBaseline` no numéricos) y en ese caso
+      usa `COLD_START_MESSAGE` en vez del genérico "Pendiente de evaluación.". Verificado en el
+      navegador con un perfil recién creado, sin historial: el mensaje real que aparece es
+      "Recolectando datos para dar un análisis concreto...". `expectedVsActualReady` sigue
+      existiendo tal cual para la UI que ya lo consumía.
 - Lógica deportiva (documentos maestro): ampliamente definida, ver sección 9.
 - Huecos de diseño abiertos: ver sección 5 (varios requieren decisión del entrenador antes de
   poder codificarse con confianza).
@@ -335,12 +341,18 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
    (Motor ATR sección 13) tome precedencia sobre el perfil genérico (propuesta a validar: 3–5 podios).
 8. ~~Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
    numéricos entre Bajo/Moderado/Alto/Crítico~~ **resuelto el 2026-07-21** — árbol de decisión
-   acumulativo en `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`). Dos números elegidos por
-   Claude sin confirmación explícita del entrenador (documentados como provisionales en el código):
-   el piso de "dolor/molestia leve presente" (≥3, mismo valor que "Leve" en las opciones de
-   captura) y el umbral de "por debajo de lo esperado" por variable de rendimiento (reusa los
-   mismos números que ya usa Capa 2 — 4 en Carga/Impacto, 5 en el resto — para no inventar un
-   tercer criterio de declive distinto en el motor).
+   acumulativo en `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`). **Confirmado el
+   2026-07-21 (quinta interacción del día):** el usuario trajo la definición completa
+   Bajo/Moderado/Alto/Crítico con fundamento de literatura (reducción de HRV ~4.5% tras 3-5 días de
+   carga alta en nadadores; aceleración del deterioro fisiológico ~7 días antes de lesión en
+   triatletas — Crítico se fija en 5 días, antes del punto de aceleración, filosofía "alerta
+   temprana, no diagnóstico") y coincide EXACTAMENTE con la implementación ya existente: `sustained
+   >= 3` para Alto, `sustained >= 5` Y `decliningCount >= 2` para Crítico. No se cambió código, solo
+   se confirma que los umbrales de días/variables ya no son una elección propia de Claude sino
+   una decisión del entrenador respaldada en literatura. Los dos números que siguen sin confirmar
+   explícita del entrenador son otros: el piso de "dolor/molestia leve presente" (≥3, mismo valor
+   que "Leve" en las opciones de captura) y el umbral de "por debajo de lo esperado" por variable
+   de rendimiento (reusa los mismos números que ya usa Capa 2 — 4 en Carga/Impacto, 5 en el resto).
 9. Confirmar si las "Alertas" del Dashboard Entrenador son exactamente los 4 tipos de la
    sección 11.4 del Motor ATR, o si hay tipos adicionales.
 10. Fórmula exacta de "deterioro progresivo" para la Recuperación Autonómica Post-Entreno (métrica
@@ -358,41 +370,50 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     backend/Cloud Function que no exista todavía (Firebase solo "previsto", §3). Decisión explícita
     del usuario 2026-07-21: no implementar esa llamada hasta que exista ese proxy.
 13. **Decisiones de Frontend/UX (informe de decisiones 2026-07-21, a partir de un mockup) —
-    RECIBIDAS, GUARDADAS PARA IMPLEMENTAR MÁS ADELANTE, NADA DE ESTO ESTÁ CODIFICADO TODAVÍA**
-    (a diferencia del resto de esta sesión — el usuario pidió explícitamente guardar esto para
-    retomarlo después, no implementarlo ahora):
+    IMPLEMENTADAS el 2026-07-21** (cuarta ronda del mismo día; recibidas y guardadas sin
+    implementar en la tercera ronda, el usuario pidió retomarlas en esta ronda):
     - **Eliminar cualquier score único tipo "Readiness 87/100".** Contradice el principio
       fundacional del proyecto (nunca reducir el estado a un número genérico tipo Whoop). El
       estado se comunica siempre por los 6 estados oficiales (o "no evaluable"), nunca como score
-      aislado. (Verificado el 2026-07-21: hoy no existe ningún score de ese tipo en el código —
-      esta regla es preventiva, para no introducir uno por accidente más adelante.)
-    - **Comparación de dos niveles, no uno:** primaria (decide el color/estado — contra baseline
-      individual + tolerancia del microciclo, ya implementada) y secundaria (contexto de
-      tendencia, sin semáforo propio — delta "vs. día anterior", informativo, nunca decide el
-      estado por sí solo). La secundaria NO está implementada.
-    - **Estructura drill-down:** pantalla principal = resumen (estado + variables más relevantes);
-      el resto se despliega al entrar al detalle. Excepción: dolor sube automáticamente a la vista
-      principal si está elevado ese día, aunque el resto de variables secundarias estén en el
-      drill-down — es la única variable con poder de veto visual, no puede quedar enterrada un día
-      crítico. NO implementado (`home.tsx` hoy muestra todo sin jerarquía de resumen/detalle).
-    - **Escala de Borg — usar las descripciones verbales oficiales de Borg CR-10, no categorías
-      simplificadas inventadas:** 0 Nada en absoluto, 1 Muy muy leve, 2 Leve, 3 Moderado, 4 Algo
-      intenso, 5 Intenso, 7 Muy intenso, 9 Muy muy intenso, 10 Máximo esfuerzo (6 y 8 se omiten a
-      propósito, son los anclajes verbales oficiales de la escala). El atleta selecciona por
-      descripción, el sistema guarda el número real (0–10) para no perder resolución en
-      `calculateInternalLoad`. NO implementado — `register.tsx` (`BORG_OPTIONS`) hoy usa una
-      escala simplificada propia (2/3/5/7/9/10, sin 0/1/4), distinta de esta.
-    - **"Subcompensado" descartado** — no se agrega como estado nuevo. Se mantiene solo
-      "Preparación insuficiente" (que ya cubre "recuperación insuficiente") tal como estaba. No
-      requiere acción de código, es una confirmación de que NO hay que agregar nada.
-    - **"Sensación general" / "percepción de recuperación" (mockup) = variables ya existentes**
-      (piernas/ánimo/sueño) con otro nombre visual — no crear campos nuevos duplicados en el
-      modelo de datos. No requiere acción de código todavía, es una restricción a respetar cuando
-      se construya esa parte de la UI.
-    - **Pendiente de confirmar con el usuario:** qué es exactamente la pestaña "Entrenador IA" en
-      la navegación del atleta. Asunción de trabajo hasta nueva indicación: chat de IA para
-      consultas generales del atleta, sin acceso al veredicto "listo/no listo para competir"
-      (exclusivo del entrenador, ver punto 1 arriba).
+      aislado. (Verificado el 2026-07-21: sigue sin existir ningún score de ese tipo en el código —
+      regla preventiva, nada que implementar.)
+    - **Comparación de dos niveles, no uno** -- ~~la secundaria NO está implementada~~ **resuelto**:
+      `describeVsPreviousDay` en `atrEngine.ts` (delta FC/HRV/sueño vs. el registro previo,
+      puramente informativo, sin semáforo propio, nunca decide `state`). Si el atleta se salta
+      días de registro, la etiqueta lo refleja ("vs. último registro (hace N días)") en vez de
+      decir "vs. día anterior" cuando no lo es (hallazgo de `code-reviewer`, corregido antes de
+      cerrar).
+    - **Estructura drill-down** -- ~~NO implementado~~ **resuelto**: `home.tsx` ahora separa resumen
+      (siempre visible: estado ATR, confianza, IRL si no es Bajo, alertas) de detalle plegable
+      ("Ver detalle": comparación esperado-vs-actual, disonancia, Nivel 2/3, desglose subjetivo y
+      de carga). Dolor/molestia elevado (mismo umbral que el gate de IRL, `isPainElevated` en
+      `physiologicalRanges.ts`) sube al resumen aunque sea una variable "subjetiva" -- el veto
+      visual documentado.
+    - **Escala de Borg CR-10 oficial** -- ~~NO implementado~~ **resuelto**: `register.tsx`
+      (`BORG_OPTIONS`) ahora usa los anclajes verbales oficiales (0 Nada en absoluto ... 10 Máximo
+      esfuerzo, 6 y 8 omitidos a propósito). Verificado que `getBorgExpectedRange` en
+      `physiologicalRanges.ts` ya usaba estos mismos rangos reales (Carga 5-8, etc.) desde antes --
+      solo la UI estaba desalineada, no la lógica de dominio.
+    - **"Subcompensado" descartado** — confirmación sin acción de código, sigue sin agregarse.
+    - **"Sensación general" = variables ya existentes** — sin acción de código, restricción
+      respetada (no se crearon campos duplicados).
+    - **"Listo para competir" nunca visible al atleta** -- ~~solo comentado en código~~ **aplicado**:
+      `home.tsx` gana un toggle "Vista Entrenador / Vista Atleta" (`viewMode`) que oculta la card
+      en modo Atleta. Es un filtro de PRESENTACIÓN, no una separación real de dashboards ni un
+      límite de seguridad (sigue sin auth/roles, fase single-user) -- ver también el gap de
+      sección 4 ("separación Dashboard Atleta/Entrenador").
+    - **"Entrenador IA" — spec recibida el 2026-07-21 (quinta interacción del día), NO
+      implementada todavía.** El usuario confirmó qué es: chat conversacional para el atleta,
+      mismo motor de explicación (Capa 2, ya implementado en `explanationEngine.ts`) pero en
+      formato pregunta-respuesta. Restricción no negociable (ya aplicada en código desde la
+      tercera ronda): nunca revela "listo/no listo" (`buildExplanationPayload` excluye `readiness`
+      cuando `audience==="athlete"`). Contexto: solo `CoachMetrics.shareableNote` (ya implementado)
+      entra al chat, nunca `coachNotes` (privada). Confirmado: el diseño ya está resuelto en
+      `explanationEngine.ts` tal cual (`coachShareableNote` en el payload, guardrail de audiencia)
+      -- lo que falta es únicamente la UI de chat + la llamada real a la API de OpenAI, bloqueada
+      por la misma razón de siempre (sección 5 punto 12: no hay backend/proxy que no exponga la
+      API key en el cliente). No se implementó nada nuevo de código para esto en esta ronda, ya
+      estaba listo de rondas anteriores.
 
 ### Ya tienen propuesta inicial (arquitectura, se puede avanzar sin bloquear):
 - ~~Índice de Confianza del Análisis (Alta/Media/Baja según variables disponibles)~~ **implementado
@@ -643,6 +664,69 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   89/89 tests (10 nuevos), `tsc`/`eslint` limpios. Próximo paso sugerido: revisar con el
   entrenador, commitear/pushear; después retomar la sección 5 punto 13 (frontend/UX) cuando el
   usuario lo pida, o seguir cerrando huecos (Perfil Competitivo Individual, backend/proxy de IA).
+- **2026-07-21 (cuarta ronda, mismo día)** — Sesión previa había quedado sin commitear al cierre.
+  Se retomó el trabajo pendiente: `register.tsx` deja de depender de datos que nadie escribía
+  (Health de solo lectura, `CoachMetrics` sin pantalla) — se agregaron campos editables para FC/HRV/
+  sueño (lectura matutina), post-entreno (2h ±15min), pre-sueño, y una card "Entrenador (uso del
+  staff)" con las 9 variables de `CoachMetrics` + nota privada + nota compartible (detalle completo
+  en sección 4). Antes de commitear, pasó por `code-reviewer` (regla no negociable de sección 10.6)
+  que encontró 2 hallazgos críticos, ambos corregidos en la misma sesión: (1) `handleSave` y la
+  carga inicial de `register.tsx` no tenían manejo de errores (violaba "nunca fallar en silencio",
+  sección 10.1) — ahora ambos capturan, loguean con contexto y alertan al usuario sin perder lo
+  escrito en pantalla; (2) `register.tsx`/`home.tsx` leían/escribían un campo
+  `currentMicrocycle`/`microcycle` inexistente en `AthleteProfile` vía `as any` — se formalizó
+  `currentMicrocycle?: MicrocycleType` en el modelo (revisado con `data-schema-reviewer`: perfiles
+  ya guardados sin el campo siguen cargando bien, es opcional). `npx tsc --noEmit`, lint y tests
+  (89/89) verificados después de las correcciones. Commiteado y pusheado (`10fef0e`).
+- **2026-07-21 (quinta ronda, mismo día)** — El usuario pidió continuar sin pausas ni preguntas
+  hasta terminar el proyecto. Se retomó la sección 5 punto 13 (decisiones de frontend/UX recibidas
+  en la tercera ronda pero explícitamente guardadas sin implementar) y se cerró el gap de mensaje
+  de arranque en frío (§1.8, sección 4). Todo verificado con tests (96/96, 5 nuevos) y manualmente
+  en el navegador (`expo start --web` + Chrome DevTools Protocol, perfil nuevo desde cero):
+  - **Mensaje de arranque en frío (§1.8):** `atrEngine.ts` distingue, dentro del caso `default` de
+    `mapDissonanceToState`, si el motor cae en "Pendiente de evaluacion" específicamente por falta
+    de baseline (vs. otras causas, ej. sin datos subjetivos con baseline ya presente, que sigue
+    mostrando el mensaje genérico) y usa un texto específico en ese caso. Verificado en el
+    navegador con un atleta recién creado: aparece "Recolectando datos para dar un análisis
+    concreto..." en vez del genérico.
+  - **Comparación secundaria "vs. día anterior":** nuevo `describeVsPreviousDay` en `atrEngine.ts`
+    (tipo `PreviousDayComparison` en el modelo) — deltas de FC/HRV/sueño contra el registro anterior
+    del historial, puramente informativo, nunca decide `state` (principio ya establecido: la
+    comparación primaria contra baseline es la única que decide color/estado). `code-reviewer`
+    encontró que la etiqueta "vs. día anterior" sería engañosa si el atleta se salta días de
+    registro (el "anterior" en el historial podría ser de hace varios días) — corregido antes de
+    cerrar: `home.tsx` calcula el gap real de días entre registros y la función ajusta la etiqueta
+    a "vs. último registro (hace N días)" cuando el gap no es exactamente 1.
+  - **Estructura drill-down + veto visual de dolor:** `home.tsx` reestructurado en resumen siempre
+    visible (estado ATR, mensaje, confianza, IRL si no es Bajo, dolor/molestia elevado, alertas) +
+    detalle plegable ("Ver detalle ▾": comparación esperado-vs-actual, disonancia, Nivel 2/3,
+    desglose subjetivo y de carga). El umbral de "dolor elevado" reusa exactamente el mismo que ya
+    gatea el árbol de IRL (`PAIN_PRESENT_THRESHOLD`/`isPainElevated`, movido de
+    `injuryRiskEngine.ts` a `physiologicalRanges.ts` para compartirlo con la UI en vez de duplicar
+    el número) — mismo criterio de "dolor presente" en todo el sistema, no dos umbrales distintos.
+  - **Escala de Borg CR-10 oficial:** `register.tsx` (`BORG_OPTIONS`) reemplaza la escala
+    simplificada propia por los anclajes verbales oficiales (0 Nada en absoluto ... 10 Máximo
+    esfuerzo, 6 y 8 omitidos a propósito). Se confirmó que `getBorgExpectedRange` en
+    `physiologicalRanges.ts` ya usaba estos rangos reales desde la primera implementación del motor
+    — el desalineamiento era solo de la UI, no de la lógica de dominio.
+  - **Toggle Vista Entrenador/Atleta:** `home.tsx` gana `viewMode` ("coach" default | "athlete") que
+    por fin APLICA en código la exclusión de "Listo para competir" en modo Atleta — antes esa regla
+    solo estaba documentada en un comentario, nunca se ejecutaba porque no existía ninguna vista de
+    atleta. Documentado explícitamente en el código y aquí: es un filtro de PRESENTACIÓN sin valor
+    de seguridad real (el proyecto sigue sin auth/roles, fase single-user, CLAUDE.md §0) — no
+    reemplaza la separación real de dashboards pendiente (sección 4), es un paso intermedio.
+  - **Mensaje entrante del usuario a mitad de sesión:** confirmación con fundamento de literatura
+    de los umbrales de días del IRL (ya implementados, coincidían exactamente — sección 5 punto 8)
+    y spec completa de "Entrenador IA" (chat del atleta, mismo motor de explicación con guardrail
+    de audiencia ya implementado desde la tercera ronda) — sin cambios de código necesarios en
+    ninguno de los dos, ambos ya estaban resueltos tal cual se confirmó. Documentado en sección 5
+    puntos 8 y 13.
+  - Pasado por `code-reviewer` antes de cerrar (regla de sección 10.6); los 2 hallazgos que
+    reportó (etiqueta "vs. día anterior" engañosa con gap de días, y un caso borde sin cubrir por
+    test) se corrigieron/cubrieron en esta misma ronda.
+  `npx tsc --noEmit`, `npm run lint`, `npm test` (96/96) limpios. Próximo paso sugerido: decidir
+  entre Apple Health, Perfil Competitivo Individual, backend/proxy de IA (desbloquea "Entrenador
+  IA"), o construir la separación REAL de Dashboard Atleta/Entrenador (más allá del toggle actual).
 
 ---
 

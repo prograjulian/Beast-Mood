@@ -13,6 +13,7 @@ import {
   getFcTargetRange,
   getHrvTargetRange,
   isNumber,
+  isPainElevated,
   percentChange,
   toFatigueAxis,
 } from "./physiologicalRanges";
@@ -29,12 +30,6 @@ import {
  * riesgo, no un diagnóstico de lesión.
  */
 
-// "Dolor/molestia leve presente" -- el informe no da un número, se usa el
-// mismo piso que "Leve" en las opciones de captura de register.tsx
-// (PAIN_OPTIONS/FEELING_OPTIONS ya usan 1/3/5/7/9) -- provisional razonable,
-// no confirmado por el entrenador.
-const PAIN_PRESENT_THRESHOLD = 3;
-
 // Umbral de "por debajo de lo esperado" por variable de rendimiento --
 // mismos números que ya usa getPerformanceDirection en atrEngine.ts (Capa
 // 2) para mantener un solo criterio de "declive" en todo el motor, en vez
@@ -49,13 +44,6 @@ function countDecliningPerformanceVars(subjective: SubjectiveMetrics, microcycle
   return [subjective.explosiveness, subjective.speedReaction, subjective.techniqueQuality].filter((value) =>
     isBelowExpectedPerformance(value, microcycle)
   ).length;
-}
-
-function isPainPresent(subjective: SubjectiveMetrics): boolean {
-  return (
-    (isNumber(subjective.musclePain) && subjective.musclePain >= PAIN_PRESENT_THRESHOLD) ||
-    (isNumber(subjective.discomfort) && subjective.discomfort >= PAIN_PRESENT_THRESHOLD)
-  );
 }
 
 function isOutOfExpectedRange(status: RangeStatus | undefined): boolean {
@@ -79,7 +67,7 @@ function computeDaySignals(record: DailyRecord, baseline: HealthBaseline): DaySi
   const hrvStatus = toFatigueAxis(classifyAgainstRange(hrvDelta, getHrvTargetRange(microcycle)), true);
 
   return {
-    painPresent: isPainPresent(record.subjective),
+    painPresent: isPainElevated(record.subjective),
     fcOut: isOutOfExpectedRange(fcStatus),
     hrvOut: isOutOfExpectedRange(hrvStatus),
     decliningCount: countDecliningPerformanceVars(record.subjective, microcycle),
@@ -169,7 +157,7 @@ export function evaluateInjuryRisk(
   baseline: HealthBaseline,
   history: DailyRecord[]
 ): InjuryRiskEvaluation {
-  if (!isPainPresent(subjective)) {
+  if (!isPainElevated(subjective)) {
     // El árbol completo está gateado por "dolor dispara investigación"
     // (informe de decisiones) -- sin dolor/molestia, IRL no se evalúa.
     return { sustainedDays: 0, historicalComparisonAvailable: false };

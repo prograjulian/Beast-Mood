@@ -126,12 +126,21 @@ const LEG_OPTIONS: OptionItem[] = [
   { label: "Muy pesadas", value: 1 },
 ];
 
+// Escala de Borg CR-10 -- anclajes verbales OFICIALES (informe de
+// decisiones 2026-07-21, sección 5 punto 13), no una versión simplificada
+// propia. 6 y 8 se omiten a propósito: no tienen anclaje verbal en la
+// escala original de Borg, el atleta selecciona por descripción y el
+// sistema guarda el número real 0-10 (sin perder resolución en
+// calculateInternalLoad).
 const BORG_OPTIONS: OptionItem[] = [
-  { label: "Muy fácil", value: 2 },
-  { label: "Fácil", value: 3 },
-  { label: "Moderado", value: 5 },
-  { label: "Exigente", value: 7 },
-  { label: "Muy exigente", value: 9 },
+  { label: "Nada en absoluto", value: 0 },
+  { label: "Muy muy leve", value: 1 },
+  { label: "Leve", value: 2 },
+  { label: "Moderado", value: 3 },
+  { label: "Algo intenso", value: 4 },
+  { label: "Intenso", value: 5 },
+  { label: "Muy intenso", value: 7 },
+  { label: "Muy muy intenso", value: 9 },
   { label: "Máximo esfuerzo", value: 10 },
 ];
 

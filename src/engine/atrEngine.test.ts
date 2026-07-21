@@ -1,4 +1,4 @@
-import { describeExpectedVsActual, evaluateATR } from "./atrEngine";
+import { describeExpectedVsActual, describeVsPreviousDay, evaluateATR } from "./atrEngine";
 import type { MicrocycleType } from "../model/athletedata/atr";
 import type { DailyRecord } from "../model/athletedata/dailyRecord";
 import type { HealthBaseline , HealthSnapshot } from "../model/athletedata/health";
@@ -931,6 +931,31 @@ describe("Casos borde generales", () => {
     });
     expect(result.expectedVsActualReady).toBe(false);
   });
+
+  test("sin baseline y sin dissonanceLabel -> mensaje específico de arranque en frío (Motor ATR §1.8), no el genérico", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline: {},
+      health: {},
+      subjective: {},
+      training: {},
+    });
+    expect(result.state).toBe("Pendiente de evaluacion");
+    expect(result.message).toContain("Recolectando datos");
+    expect(result.message).not.toBe("Pendiente de evaluación.");
+  });
+
+  test("con baseline completo pero sin dissonanceLabel -> mensaje genérico, no el de arranque en frío", () => {
+    const result = evaluateATR({
+      microcycle: "Ajuste",
+      baseline,
+      health: {},
+      subjective: {},
+      training: {},
+    });
+    expect(result.state).toBe("Pendiente de evaluacion");
+    expect(result.message).toBe("Pendiente de evaluación.");
+  });
 });
 
 describe("describeExpectedVsActual", () => {
@@ -947,5 +972,45 @@ describe("describeExpectedVsActual", () => {
         "HRV: esperado -10% a -5%, actual -8%\n" +
         "Borg: esperado 2 a 4, actual 3"
     );
+  });
+});
+
+describe("describeVsPreviousDay — comparación secundaria, nunca decide el estado", () => {
+  test("sin registro del día anterior -> no disponible", () => {
+    const result = describeVsPreviousDay({ restingHeartRate: 55, hrv: 90 }, undefined);
+    expect(result.available).toBe(false);
+  });
+
+  test("con datos de ambos días -> deltas informativos", () => {
+    const result = describeVsPreviousDay(
+      { restingHeartRate: 55, hrv: 88, sleepHours: 6 },
+      { restingHeartRate: 52, hrv: 95, sleepHours: 7.5 }
+    );
+    expect(result.available).toBe(true);
+    expect(result.restingHeartRateDelta).toBe(3);
+    expect(result.hrvDelta).toBe(-7);
+    expect(result.sleepHoursDelta).toBe(-1.5);
+    expect(result.note).toContain("no determina el estado");
+  });
+
+  test("día anterior sin ninguna variable comparable -> no disponible", () => {
+    const result = describeVsPreviousDay({ restingHeartRate: 55 }, {});
+    expect(result.available).toBe(false);
+  });
+
+  test("con un salto de varios días, la etiqueta lo refleja en vez de decir 'día anterior'", () => {
+    const result = describeVsPreviousDay(
+      { restingHeartRate: 55 },
+      { restingHeartRate: 50 },
+      4
+    );
+    expect(result.available).toBe(true);
+    expect(result.note).toContain("hace 4 días");
+    expect(result.note).not.toContain("vs. día anterior");
+  });
+
+  test("sin gap explícito (undefined) o gap de 1 día -> etiqueta 'vs. día anterior'", () => {
+    const result = describeVsPreviousDay({ restingHeartRate: 55 }, { restingHeartRate: 50 }, 1);
+    expect(result.note).toContain("vs. día anterior");
   });
 });

@@ -7,6 +7,7 @@ import type {
   Level3Result,
   MicrocycleType,
   PhysiologicalReading,
+  PreviousDayComparison,
   RangeStatus,
   ReadinessEvaluation,
   SubjectiveStatus,
@@ -29,6 +30,15 @@ import {
 } from "./physiologicalRanges";
 import { evaluateInjuryRisk } from "./injuryRiskEngine";
 import { evaluatePostWorkoutTrend, observePostWorkoutRecovery } from "./postWorkoutEngine";
+
+// Mensaje de arranque en frío (Motor ATR §1.8, CLAUDE.md §4 -- gap
+// reconfirmado 2026-07-21: la UI solo dejaba `expectedVsActualReady` en
+// `false` sin mostrar este texto específico). Se usa cuando el motor cae en
+// "Pendiente de evaluacion" DESPUÉS de elegir microciclo, específicamente
+// porque falta baseline -- no es un estado inventado, es la falta de datos
+// suficientes para comparar contra el perfil individual del atleta.
+const COLD_START_MESSAGE =
+  "Recolectando datos para dar un análisis concreto. Todavía no hay suficiente historial para calcular tu baseline individual (Motor ATR §1.8) -- sigue registrando tus lecturas diarias.";
 
 function formatPercent(value?: number): string {
   if (!isNumber(value)) return "--";
@@ -1008,7 +1018,7 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
         "La respuesta del atleta se mantiene alineada con lo esperado para este microciclo.";
       break;
     default:
-      message = "Pendiente de evaluación.";
+      message = !isNumber(fcBaseline) || !isNumber(hrvBaseline) ? COLD_START_MESSAGE : "Pendiente de evaluación.";
       break;
   }
 
@@ -1080,4 +1090,69 @@ export function describeExpectedVsActual(
   const borgText = `Borg: esperado ${borgRange.min ?? "--"} a ${borgRange.max ?? "--"}, actual ${isNumber(borg) ? borg : "--"}`;
 
   return `${fcText}\n${hrvText}\n${borgText}`;
+}
+
+// ---------------------------------------------------------------------------
+// Comparación secundaria "vs. día anterior" (informe de decisiones
+// 2026-07-21, sección 5 punto 13). Ver PreviousDayComparison en
+// model/athletedata/atr.ts para el porqué: nunca decide `state`, solo
+// contexto de tendencia.
+// ---------------------------------------------------------------------------
+
+function roundDelta(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+export function describeVsPreviousDay(
+  current: HealthSnapshot,
+  previous?: HealthSnapshot,
+  // Días de calendario entre el registro actual y el anterior usado para
+  // comparar. Si el atleta se salta días, el registro "anterior" en el
+  // historial puede no ser literalmente "ayer" -- sin este dato la etiqueta
+  // diría "vs. día anterior" aunque en realidad sea "vs. hace 4 días",
+  // induciendo a leer mal la tendencia (hallazgo de code-reviewer).
+  daysSincePrevious?: number
+): PreviousDayComparison {
+  if (!previous) {
+    return { available: false, note: "Sin registro del día anterior todavía." };
+  }
+
+  const referenceLabel =
+    daysSincePrevious === undefined || daysSincePrevious === 1
+      ? "vs. día anterior"
+      : `vs. último registro (hace ${daysSincePrevious} días)`;
+
+  const restingHeartRateDelta =
+    isNumber(current.restingHeartRate) && isNumber(previous.restingHeartRate)
+      ? roundDelta(current.restingHeartRate - previous.restingHeartRate)
+      : undefined;
+  const hrvDelta =
+    isNumber(current.hrv) && isNumber(previous.hrv) ? roundDelta(current.hrv - previous.hrv) : undefined;
+  const sleepHoursDelta =
+    isNumber(current.sleepHours) && isNumber(previous.sleepHours)
+      ? roundDelta(current.sleepHours - previous.sleepHours)
+      : undefined;
+
+  if (restingHeartRateDelta === undefined && hrvDelta === undefined && sleepHoursDelta === undefined) {
+    return { available: false, note: "Sin datos suficientes para comparar con el día anterior." };
+  }
+
+  const parts: string[] = [];
+  if (restingHeartRateDelta !== undefined) {
+    parts.push(`FC ${restingHeartRateDelta > 0 ? "+" : ""}${restingHeartRateDelta} lpm`);
+  }
+  if (hrvDelta !== undefined) {
+    parts.push(`HRV ${hrvDelta > 0 ? "+" : ""}${hrvDelta} ms`);
+  }
+  if (sleepHoursDelta !== undefined) {
+    parts.push(`Sueño ${sleepHoursDelta > 0 ? "+" : ""}${sleepHoursDelta} h`);
+  }
+
+  return {
+    available: true,
+    restingHeartRateDelta,
+    hrvDelta,
+    sleepHoursDelta,
+    note: `${referenceLabel}: ${parts.join(" · ")} (informativo, no determina el estado)`,
+  };
 }

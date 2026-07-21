@@ -11,10 +11,12 @@ import {
   View,
 } from "react-native";
 
-import { describeExpectedVsActual, evaluateATR } from "../engine/atrEngine";
+import { describeExpectedVsActual, describeVsPreviousDay, evaluateATR } from "../engine/atrEngine";
 import { calculateHealthBaseline } from "../engine/baselineEngine";
-import type { ATRInterpretation, MicrocycleType } from "../model/athletedata/atr";
+import { isPainElevated } from "../engine/physiologicalRanges";
+import type { ATRInterpretation, MicrocycleType, PreviousDayComparison } from "../model/athletedata/atr";
 import type { AthleteProfile } from "../model/athletedata/athlete";
+import type { CoachMetrics } from "../model/athletedata/coach";
 import {
   emptyHealthBaseline,
   type HealthBaseline,
@@ -30,6 +32,15 @@ import {
 } from "../repository/metricsRepository";
 import { getAthleteProfile } from "../services/storage";
 
+// "Vista Atleta / Vista Entrenador" (informe de decisiones 2026-07-21,
+// sección 5 punto 13) -- es un filtro de PRESENTACIÓN, no un límite de
+// seguridad: el proyecto sigue en fase single-user, sin auth/roles reales
+// todavía (CLAUDE.md §0). Lo único que este toggle debe garantizar es que
+// "Listo para competir" nunca se muestre en modo Atleta (efecto nocebo
+// documentado) -- cuando exista una separación real de dashboards por
+// usuario, este toggle se reemplaza, no se elimina la regla.
+type ViewMode = "coach" | "athlete";
+
 function formatNumber(value?: number, suffix = ""): string {
   if (typeof value !== "number" || Number.isNaN(value)) return "--";
   return `${value}${suffix}`;
@@ -44,18 +55,32 @@ function getMicrocycleFromProfile(profile: AthleteProfile | null): string {
   return profile?.currentMicrocycle || "";
 }
 
+// Días de calendario entre dos fechas "YYYY-MM-DD" -- si el atleta se salta
+// días de registro, el "anterior" en el historial puede no ser literalmente
+// ayer (hallazgo de code-reviewer: la etiqueta "vs. día anterior" sería
+// engañosa en ese caso).
+function daysBetweenDates(laterDate: string, earlierDate: string): number {
+  const later = new Date(`${laterDate}T00:00:00Z`).getTime();
+  const earlier = new Date(`${earlierDate}T00:00:00Z`).getTime();
+  return Math.round((later - earlier) / (1000 * 60 * 60 * 24));
+}
+
 export default function HomeScreen() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<AthleteProfile | null>(null);
   const [activeMicrocycle, setActiveMicrocycle] = useState<string>("");
+  const [viewMode, setViewMode] = useState<ViewMode>("coach");
+  const [detailExpanded, setDetailExpanded] = useState(false);
 
   const [healthBaseline, setHealthBaseline] = useState<HealthBaseline>(emptyHealthBaseline);
   const [healthSnapshot, setHealthSnapshot] = useState<HealthSnapshot>({});
+  const [previousHealthSnapshot, setPreviousHealthSnapshot] = useState<HealthSnapshot | undefined>();
+  const [daysSincePrevious, setDaysSincePrevious] = useState<number | undefined>();
   const [subjective, setSubjective] = useState<SubjectiveMetrics>({});
   const [training, setTraining] = useState<TrainingLoad>({});
-  const [coach, setCoach] = useState<any | null>(null);
+  const [coach, setCoach] = useState<CoachMetrics | null>(null);
 
   const [atr, setAtr] = useState<ATRInterpretation>({
     state: "Pendiente de evaluacion",
@@ -79,6 +104,7 @@ export default function HomeScreen() {
         ]);
 
         const latestRecord = history.length > 0 ? history[history.length - 1] : null;
+        const previousRecord = history.length > 1 ? history[history.length - 2] : null;
 
         // Bug B.2 (informe de decisiones 2026-07-20): baseline con ventana
         // móvil de 7 días, calculado a partir del historial real en vez de
@@ -104,6 +130,10 @@ export default function HomeScreen() {
         setProfile(storedProfile);
         setHealthBaseline(nextBaseline);
         setHealthSnapshot(nextSnapshot);
+        setPreviousHealthSnapshot(previousRecord?.health);
+        setDaysSincePrevious(
+          latestRecord && previousRecord ? daysBetweenDates(latestRecord.date, previousRecord.date) : undefined
+        );
         setSubjective(nextSubjective);
         setTraining(nextTraining);
         setCoach(nextCoach);
@@ -183,6 +213,20 @@ export default function HomeScreen() {
     };
   }, [activeMicrocycle, healthBaseline, healthSnapshot, training]);
 
+  // Comparación secundaria "vs. día anterior" -- informe de decisiones
+  // 2026-07-21, sección 5 punto 13. Nunca decide el color/estado (eso lo
+  // sigue haciendo la comparación primaria contra baseline), solo da
+  // contexto de tendencia día a día.
+  const previousDayComparison: PreviousDayComparison = useMemo(
+    () => describeVsPreviousDay(healthSnapshot, previousHealthSnapshot, daysSincePrevious),
+    [healthSnapshot, previousHealthSnapshot, daysSincePrevious]
+  );
+
+  // Dolor/molestia elevado: única variable con veto visual (sección 5 punto
+  // 13) -- sube al resumen aunque el resto de variables subjetivas esté en
+  // el drill-down, un día crítico no puede quedar enterrado.
+  const painElevated = isPainElevated(subjective);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -203,6 +247,25 @@ export default function HomeScreen() {
         <Text style={styles.subtitle}>
           Base preparada para sincronizar salud, subjetivo y ATR.
         </Text>
+
+        <View style={styles.viewModeRow}>
+          <Pressable
+            onPress={() => setViewMode("coach")}
+            style={[styles.viewModeChip, viewMode === "coach" && styles.viewModeChipActive]}
+          >
+            <Text style={[styles.viewModeText, viewMode === "coach" && styles.viewModeTextActive]}>
+              Vista Entrenador
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setViewMode("athlete")}
+            style={[styles.viewModeChip, viewMode === "athlete" && styles.viewModeChipActive]}
+          >
+            <Text style={[styles.viewModeText, viewMode === "athlete" && styles.viewModeTextActive]}>
+              Vista Atleta
+            </Text>
+          </Pressable>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.label}>ATLETA</Text>
@@ -225,6 +288,18 @@ export default function HomeScreen() {
           ))}
         </View>
 
+        {previousDayComparison.available ? (
+          <Text style={styles.previousDayHint}>{previousDayComparison.note}</Text>
+        ) : null}
+
+        {/*
+          Resumen (siempre visible): estado ATR + confianza + IRL + dolor. El
+          resto (comparación esperado vs. actual, disonancia, Nivel 2/3,
+          desglose subjetivo/carga) vive en el drill-down -- estructura de
+          dos niveles del informe de decisiones 2026-07-21, sección 5 punto
+          13. Excepción: dolor elevado sube aquí aunque sea "subjetivo",
+          nunca puede quedar enterrado un día crítico.
+        */}
         <View style={styles.card}>
           <Text style={styles.label}>ATR</Text>
           <Text style={styles.value}>{atr.state}</Text>
@@ -239,11 +314,13 @@ export default function HomeScreen() {
               Riesgo de lesión: {atr.injuryRisk.level}
             </Text>
           ) : null}
-
-          <View style={styles.atrSpacer} />
-
-          <Text style={styles.label}>Comparación ideal vs actual</Text>
-          <Text style={styles.monoHint}>{atrSummary.expectedVsActual}</Text>
+          {painElevated ? (
+            <View style={styles.painBox}>
+              <Text style={styles.painText}>
+                Dolor/molestia reportado hoy -- revisar antes de decidir la carga.
+              </Text>
+            </View>
+          ) : null}
 
           {atr.alerts.length > 0 ? (
             <View style={styles.alertBox}>
@@ -259,52 +336,89 @@ export default function HomeScreen() {
               Sin alertas por el momento.
             </Text>
           )}
-
-          {atr.dissonanceLabel ? (
-            <>
-              <View style={styles.atrSpacer} />
-              <Text style={styles.label}>Cruce fisiológico × subjetivo</Text>
-              <Text style={styles.hint}>{atr.dissonanceLabel}</Text>
-            </>
-          ) : null}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>NIVEL 2 — vs. microciclo anterior</Text>
-          {atr.level2?.evaluated ? (
-            <>
-              <Text style={styles.value}>
-                {atr.level2.occurredAsExpected ? "Evolución esperada" : "Evolución no ocurrió"}
-              </Text>
-              <Text style={styles.hint}>{atr.level2.note}</Text>
-            </>
-          ) : (
-            <Text style={styles.hint}>
-              {atr.level2?.note ?? "Sin datos suficientes todavía."}
-            </Text>
-          )}
-
-          <View style={styles.atrSpacer} />
-
-          <Text style={styles.label}>NIVEL 3 — histórico multi-temporada</Text>
-          <Text style={styles.hint}>
-            {atr.level3
-              ? `${atr.level3.note} (${atr.level3.completedMacrocycles}/${atr.level3.minimumRequired} macrociclos)`
-              : "Sin evaluar."}
+        <Pressable onPress={() => setDetailExpanded((prev) => !prev)} style={styles.detailToggle}>
+          <Text style={styles.detailToggleText}>
+            {detailExpanded ? "Ocultar detalle ▲" : "Ver detalle ▾"}
           </Text>
-        </View>
+        </Pressable>
+
+        {detailExpanded ? (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.label}>Comparación ideal vs actual</Text>
+              <Text style={styles.monoHint}>{atrSummary.expectedVsActual}</Text>
+
+              {atr.dissonanceLabel ? (
+                <>
+                  <View style={styles.atrSpacer} />
+                  <Text style={styles.label}>Cruce fisiológico × subjetivo</Text>
+                  <Text style={styles.hint}>{atr.dissonanceLabel}</Text>
+                </>
+              ) : null}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.label}>NIVEL 2 — vs. microciclo anterior</Text>
+              {atr.level2?.evaluated ? (
+                <>
+                  <Text style={styles.value}>
+                    {atr.level2.occurredAsExpected ? "Evolución esperada" : "Evolución no ocurrió"}
+                  </Text>
+                  <Text style={styles.hint}>{atr.level2.note}</Text>
+                </>
+              ) : (
+                <Text style={styles.hint}>
+                  {atr.level2?.note ?? "Sin datos suficientes todavía."}
+                </Text>
+              )}
+
+              <View style={styles.atrSpacer} />
+
+              <Text style={styles.label}>NIVEL 3 — histórico multi-temporada</Text>
+              <Text style={styles.hint}>
+                {atr.level3
+                  ? `${atr.level3.note} (${atr.level3.completedMacrocycles}/${atr.level3.minimumRequired} macrociclos)`
+                  : "Sin evaluar."}
+              </Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.label}>SUBJETIVO</Text>
+              <Text style={styles.hint}>
+                Fatiga: {formatNumber(subjective.fatigue)} · Dolor: {formatNumber(subjective.musclePain)} ·
+                Estrés: {formatNumber(subjective.stress)} · Motivación: {formatNumber(subjective.motivation)}
+              </Text>
+              <Text style={[styles.hint, { marginTop: 8 }]}>
+                Técnica: {formatNumber(subjective.techniqueQuality)} · Velocidad: {formatNumber(subjective.speedReaction)} ·
+                Explosividad: {formatNumber(subjective.explosiveness)}
+              </Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.label}>CARGA</Text>
+              <Text style={styles.hint}>
+                Borg: {formatNumber(training.borgCR10)} · Duración: {formatNumber(training.durationMinutes, " min")} ·
+                Carga interna: {formatNumber(training.internalLoad)}
+              </Text>
+              <Text style={[styles.hint, { marginTop: 8 }]}>
+                Coach: {coach ? "Disponible" : "Pendiente"}
+              </Text>
+            </View>
+          </>
+        ) : null}
 
         {/*
           "Listo para competir" -- SOLO microciclo Competitivo (informe de
           decisiones 2026-07-21). Decisión de producto: visibilidad EXCLUSIVA
           del entrenador (efecto nocebo documentado en atletas que reciben
-          señales negativas de wearables antes de competir). home.tsx hoy
-          funciona como vista de entrenador por defecto (CLAUDE.md §4, no
-          existe todavía la vista minimalista de atleta) -- cuando se
-          construya esa separación, esta card debe quedar EXCLUIDA de la
-          pantalla del atleta.
+          señales negativas de wearables antes de competir). El toggle de
+          arriba (viewMode) es la separación real hoy -- cuando exista una
+          pantalla de atleta separada de verdad, esta card sigue excluida
+          ahí también.
         */}
-        {atr.competitionReadiness ? (
+        {atr.competitionReadiness && viewMode === "coach" ? (
           <View style={styles.card}>
             <Text style={styles.label}>LISTO PARA COMPETIR (solo entrenador)</Text>
             <Text style={styles.value}>
@@ -337,29 +451,6 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        <View style={styles.card}>
-          <Text style={styles.label}>SUBJETIVO</Text>
-          <Text style={styles.hint}>
-            Fatiga: {formatNumber(subjective.fatigue)} · Dolor: {formatNumber(subjective.musclePain)} ·
-            Estrés: {formatNumber(subjective.stress)} · Motivación: {formatNumber(subjective.motivation)}
-          </Text>
-          <Text style={[styles.hint, { marginTop: 8 }]}>
-            Técnica: {formatNumber(subjective.techniqueQuality)} · Velocidad: {formatNumber(subjective.speedReaction)} ·
-            Explosividad: {formatNumber(subjective.explosiveness)}
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>CARGA</Text>
-          <Text style={styles.hint}>
-            Borg: {formatNumber(training.borgCR10)} · Duración: {formatNumber(training.durationMinutes, " min")} ·
-            Carga interna: {formatNumber(training.internalLoad)}
-          </Text>
-          <Text style={[styles.hint, { marginTop: 8 }]}>
-            Coach: {coach ? "Disponible" : "Pendiente"}
-          </Text>
-        </View>
-
         <Pressable
           onPress={() => router.push("/register")}
           style={styles.saveButton}
@@ -383,6 +474,32 @@ const styles = StyleSheet.create({
   subtitle: {
     color: "#9CA6B8",
     marginBottom: 18,
+  },
+  viewModeRow: {
+    flexDirection: "row",
+    marginBottom: 16,
+    gap: 8,
+  },
+  viewModeChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#1F2735",
+    alignItems: "center",
+    backgroundColor: "#0C111A",
+  },
+  viewModeChipActive: {
+    backgroundColor: "#B7FF3C",
+    borderColor: "#B7FF3C",
+  },
+  viewModeText: {
+    color: "#9CA6B8",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  viewModeTextActive: {
+    color: "#05070A",
   },
   card: {
     backgroundColor: "#101520",
@@ -408,6 +525,12 @@ const styles = StyleSheet.create({
   hint: {
     color: "#9CA6B8",
     lineHeight: 20,
+  },
+  previousDayHint: {
+    color: "#7C8AA0",
+    fontSize: 12,
+    marginBottom: 16,
+    fontStyle: "italic",
   },
   monoHint: {
     color: "#B7FF3C",
@@ -458,6 +581,18 @@ const styles = StyleSheet.create({
   atrSpacer: {
     height: 12,
   },
+  painBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "#221417",
+    borderWidth: 1,
+    borderColor: "#4A2530",
+  },
+  painText: {
+    color: "#FFC9D2",
+    fontWeight: "700",
+  },
   alertBox: {
     marginTop: 14,
     padding: 14,
@@ -476,18 +611,31 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 4,
   },
-    saveButton: {
-  backgroundColor: "#B7FF3C",
-  borderRadius: 18,
-  paddingVertical: 16,
-  alignItems: "center",
-  marginTop: 8,
-  marginBottom: 20,
-},
-
-saveButtonText: {
-  color: "#05070A",
-  fontSize: 16,
-  fontWeight: "900",
-},
+  detailToggle: {
+    alignItems: "center",
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#1F2735",
+    backgroundColor: "#0C111A",
+  },
+  detailToggleText: {
+    color: "#9CA6B8",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  saveButton: {
+    backgroundColor: "#B7FF3C",
+    borderRadius: 18,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  saveButtonText: {
+    color: "#05070A",
+    fontSize: 16,
+    fontWeight: "900",
+  },
 });
