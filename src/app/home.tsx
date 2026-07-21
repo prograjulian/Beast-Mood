@@ -14,6 +14,7 @@ import {
 import { describeExpectedVsActual, evaluateATR } from "../engine/atrEngine";
 import { calculateHealthBaseline } from "../engine/baselineEngine";
 import type { ATRInterpretation, MicrocycleType } from "../model/athletedata/atr";
+import type { AthleteProfile } from "../model/athletedata/athlete";
 import {
   emptyHealthBaseline,
   type HealthBaseline,
@@ -39,15 +40,15 @@ function formatMicrocycle(value?: string): string {
   return value;
 }
 
-function getMicrocycleFromProfile(profile: any): string {
-  return profile?.microcycle || profile?.currentMicrocycle || "";
+function getMicrocycleFromProfile(profile: AthleteProfile | null): string {
+  return profile?.currentMicrocycle || "";
 }
 
 export default function HomeScreen() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<any | null>(null);
+  const [profile, setProfile] = useState<AthleteProfile | null>(null);
   const [activeMicrocycle, setActiveMicrocycle] = useState<string>("");
 
   const [healthBaseline, setHealthBaseline] = useState<HealthBaseline>(emptyHealthBaseline);

@@ -77,10 +77,38 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-21 — tercera ronda de decisiones del entrenador el mismo día:
-> Índice de Riesgo de Lesión (IRL, resuelve §11.2) y modelo de notas privadas/compartibles del
-> entrenador. Ver las tres entradas de sesión 2026-07-21 en sección 6 para el detalle completo.
-> Repo ya en GitHub: https://github.com/prograjulian/Beast-Mood
+> Última actualización: 2026-07-21 — `register.tsx` deja de depender de datos que nadie escribía
+> (Health en modo solo-lectura, CoachMetrics sin pantalla): ahora captura FC/HRV/sueño manuales,
+> post-entreno, pre-sueño, y las variables del entrenador con notas privadas/compartibles.
+> Verificado end-to-end en el navegador (`expo start --web`), no solo con tests. Ver la cuarta
+> entrada de sesión 2026-07-21 en sección 6. Repo ya en GitHub:
+> https://github.com/prograjulian/Beast-Mood
+
+- [x] **Resuelto — captura de datos real en `register.tsx` (2026-07-21).** Hasta esta sesión, todo
+      el motor construido en las rondas anteriores (IRL, post-entreno, Listo para competir, notas
+      compartibles) no tenía forma de recibir datos reales: los campos de Health eran
+      `ReadOnlyMetric` alimentados por `getLiveHealthSnapshot`, que nada escribía (Apple Health
+      vacío), y `CoachMetrics` no tenía ninguna pantalla que lo capturara. Se agregaron campos
+      editables para FC/HRV/sueño (lectura matutina), post-entreno (2h ±15min) y pre-sueño
+      (contexto), y una card "Entrenador (uso del staff)" con las 9 variables de `CoachMetrics` +
+      nota privada + nota compartible. `handleSave` arma `HealthSnapshot`/`CoachMetrics` completos
+      en vez de reenviar el snapshot vacío sin tocar. **Verificado corriendo la app de verdad**
+      (`expo start --web`, navegador vía Chrome DevTools Protocol): flujo completo
+      onboarding → registro → home, con FC/HRV/sueño/dolor reales guardados en `AsyncStorage`
+      (confirmado leyendo el registro guardado), arranque en frío correcto (sin baseline aún,
+      `home.tsx` muestra "Pendiente de evaluación" con confianza Baja, no un estado inventado),
+      alerta de dolor visible, IRL correctamente suprimido en "Bajo" (dolor presente pero sin
+      confirmación fisiológica por falta de baseline). `npx tsc --noEmit`, `npm run lint` y
+      `npm test` (89/89) limpios. **Pasado por `code-reviewer` antes de commitear** (regla de
+      sección 10.6): encontró dos hallazgos críticos, ambos corregidos en la misma sesión — (1)
+      `handleSave` y la carga inicial de `register.tsx` no tenían `try/catch` (violaba la regla de
+      "nunca fallar en silencio", sección 10.1); ahora ambos capturan el error, lo loguean con
+      contexto y muestran una alerta al usuario sin perder lo ya escrito en pantalla. (2)
+      `register.tsx`/`home.tsx` leían/escribían un campo `currentMicrocycle`/`microcycle` que no
+      existía en `AthleteProfile` usando `as any` — se formalizó `currentMicrocycle?: MicrocycleType`
+      en `src/model/athletedata/athlete.ts` (opcional, revisado con `data-schema-reviewer`: perfiles
+      ya guardados sin el campo siguen cargando bien). `npx tsc --noEmit`, lint y tests (89/89)
+      reverificados después de estas correcciones.
 
 - [x] **Resuelto — tercera ronda de decisiones 2026-07-21: Índice de Riesgo de Lesión (IRL) y
       notas privadas/compartibles del entrenador.** Ver la tercera entrada de sesión 2026-07-21
@@ -259,12 +287,17 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       separada, construir esa vista DEBE excluir la card "Listo para competir" — quedó comentado
       así en el código (`home.tsx`), pero es una regla real pendiente de aplicar, no un detalle
       cosmético.
-- [ ] `CoachMetrics` existe como modelo (guardado/leído) pero ninguna pantalla lo captura todavía.
+- [x] ~~`CoachMetrics` existe como modelo (guardado/leído) pero ninguna pantalla lo captura
+      todavía~~ **resuelto el 2026-07-21** — se captura en una card dedicada dentro de
+      `register.tsx` ("Entrenador (uso del staff)"). Sigue sin existir una pantalla SEPARADA para
+      el entrenador (eso es la separación de dashboards, bullet de arriba, un gap distinto).
 - [ ] No existe "procedencia del dato" (medido/reportado/ausente). ~~Índice de Confianza del
       Análisis~~ **implementado el 2026-07-21**, ver sección 5.
 - [ ] No hay mensaje de arranque en frío ("Recolectando datos para dar un análisis concreto",
       §1.8) cuando falta baseline — la UI solo deja `expectedVsActualReady` en `false` sin
-      mostrar ese mensaje específico.
+      mostrar ese mensaje específico. **Reconfirmado el 2026-07-21** probando la app real sin
+      historial: el mensaje que se ve es el genérico "Pendiente de evaluación.", no el texto
+      específico de §1.8 — sigue siendo el gap real, no solo teórico.
 - Lógica deportiva (documentos maestro): ampliamente definida, ver sección 9.
 - Huecos de diseño abiertos: ver sección 5 (varios requieren decisión del entrenador antes de
   poder codificarse con confianza).

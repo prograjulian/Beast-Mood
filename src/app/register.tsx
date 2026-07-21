@@ -14,6 +14,8 @@ import {
     View,
 } from "react-native";
 
+import { type MicrocycleType } from "../model/athletedata/atr";
+import { type CoachMetrics } from "../model/athletedata/coach";
 import { type DailyRecord } from "../model/athletedata/dailyRecord";
 import {
     emptyHealthBaseline,
@@ -30,16 +32,14 @@ import {
 } from "../repository/metricsRepository";
 import { getAthleteProfile, saveAthleteProfile } from "../services/storage";
 
-const MICROCYCLES = [
+const MICROCYCLES: MicrocycleType[] = [
   "Ajuste",
   "Carga",
   "Impacto",
   "Recuperacion",
   "Activacion",
   "Competitivo",
-] as const;
-
-type MicrocycleType = (typeof MICROCYCLES)[number];
+];
 
 type OptionItem = {
   label: string;
@@ -179,6 +179,35 @@ function SelectionGroup({
   );
 }
 
+function NumericField({
+  label,
+  subtitle,
+  value,
+  onChangeText,
+  placeholder,
+}: {
+  label: string;
+  subtitle?: string;
+  value: string;
+  onChangeText: (next: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <View style={styles.fieldBlock}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#556071"
+        keyboardType="numeric"
+        style={styles.input}
+      />
+      {subtitle ? <Text style={styles.fieldSubtitle}>{subtitle}</Text> : null}
+    </View>
+  );
+}
+
 function ReadOnlyMetric({
   label,
   value,
@@ -220,6 +249,24 @@ export default function RegisterScreen() {
   const [healthBaseline, setHealthBaseline] = useState<HealthBaseline>(emptyHealthBaseline);
   const [healthSnapshot, setHealthSnapshot] = useState<HealthSnapshot>({});
 
+  // Lectura matutina en reposo -- la única que alimenta Capa 1 (Bug B.1,
+  // informe de decisiones 2026-07-21). Captura manual mientras no exista
+  // integración con Apple Health; se precarga con lo último sincronizado
+  // si existe, y el atleta/entrenador puede corregirlo.
+  const [restingHeartRate, setRestingHeartRate] = useState("");
+  const [hrv, setHrv] = useState("");
+  const [sleepHours, setSleepHours] = useState("");
+
+  // Recuperación Autonómica Post-Entreno -- métrica nueva (informe de
+  // decisiones 2026-07-20). Ventana de captura: 2h ±15min post-entreno.
+  const [postWorkoutFc, setPostWorkoutFc] = useState("");
+  const [postWorkoutHrv, setPostWorkoutHrv] = useState("");
+  const [postWorkoutMinutes, setPostWorkoutMinutes] = useState("");
+
+  // Lectura pre-sueño -- solo contexto, sin peso formal (Bug B.3).
+  const [preSleepFc, setPreSleepFc] = useState("");
+  const [preSleepHrv, setPreSleepHrv] = useState("");
+
   const [fatigue, setFatigue] = useState<number | undefined>();
   const [musclePain, setMusclePain] = useState<number | undefined>();
   const [stress, setStress] = useState<number | undefined>();
@@ -238,6 +285,24 @@ export default function RegisterScreen() {
 
   const [notes, setNotes] = useState("");
 
+  // CoachMetrics -- sin pantalla propia todavía (gap documentado en
+  // CLAUDE.md §4), captura aquí mismo mientras tanto, en una sección
+  // separada y claramente marcada como "uso del staff".
+  const [coachTechnique, setCoachTechnique] = useState<number | undefined>();
+  const [coachReaction, setCoachReaction] = useState<number | undefined>();
+  const [coachSpeed, setCoachSpeed] = useState<number | undefined>();
+  const [coachExplosiveness, setCoachExplosiveness] = useState<number | undefined>();
+  const [coachStrikingPower, setCoachStrikingPower] = useState<number | undefined>();
+  const [coachMood, setCoachMood] = useState<number | undefined>();
+  const [coachAttitude, setCoachAttitude] = useState<number | undefined>();
+  const [coachFocus, setCoachFocus] = useState<number | undefined>();
+  const [coachConfidence, setCoachConfidence] = useState<number | undefined>();
+  // Privada por defecto -- nunca llega al chat del atleta (informe de
+  // decisiones 2026-07-21). Compartible es un campo aparte, a propósito:
+  // compartir es una acción explícita, nunca inferida.
+  const [coachNotes, setCoachNotes] = useState("");
+  const [shareableNote, setShareableNote] = useState("");
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -253,16 +318,31 @@ export default function RegisterScreen() {
         ]);
 
         if (storedBaseline) setHealthBaseline(storedBaseline);
-        if (storedSnapshot) setHealthSnapshot(storedSnapshot);
+        if (storedSnapshot) {
+          setHealthSnapshot(storedSnapshot);
+          // Precarga de lo último sincronizado (si algún día Apple Health
+          // escribe acá) -- el atleta/entrenador siempre puede corregirlo.
+          if (typeof storedSnapshot.restingHeartRate === "number") {
+            setRestingHeartRate(String(storedSnapshot.restingHeartRate));
+          }
+          if (typeof storedSnapshot.hrv === "number") {
+            setHrv(String(storedSnapshot.hrv));
+          }
+          if (typeof storedSnapshot.sleepHours === "number") {
+            setSleepHours(String(storedSnapshot.sleepHours));
+          }
+        }
 
-        const microcycleFromProfile =
-          (profile as any)?.currentMicrocycle ||
-          (profile as any)?.microcycle ||
-          "Ajuste";
-
-        if (MICROCYCLES.includes(microcycleFromProfile)) {
+        const microcycleFromProfile = profile.currentMicrocycle;
+        if (microcycleFromProfile && MICROCYCLES.includes(microcycleFromProfile)) {
           setSelectedMicrocycle(microcycleFromProfile);
         }
+      } catch (error) {
+        console.error("register.tsx: fallo cargando perfil/baseline/snapshot previo", error);
+        Alert.alert(
+          "No se pudo cargar el registro",
+          "Ocurrió un error leyendo tus datos guardados. Puedes seguir e intentar guardar de nuevo."
+        );
       } finally {
         setLoading(false);
       }
@@ -279,7 +359,15 @@ export default function RegisterScreen() {
   }, [borgCR10, durationMinutes]);
 
   async function handleSave() {
-    const profile = await getAthleteProfile();
+    let profile;
+    try {
+      profile = await getAthleteProfile();
+    } catch (error) {
+      console.error("register.tsx: fallo leyendo el perfil antes de guardar", error);
+      Alert.alert("No se pudo guardar", "No se pudo leer tu perfil. Intenta de nuevo.");
+      return;
+    }
+
     if (!profile) {
       Alert.alert("Perfil no encontrado", "Completa el onboarding primero.");
       router.replace("/onboarding");
@@ -310,25 +398,82 @@ export default function RegisterScreen() {
       internalLoad,
     };
 
+    const postWorkoutFcValue = toNumber(postWorkoutFc);
+    const postWorkoutHrvValue = toNumber(postWorkoutHrv);
+    const postWorkoutMinutesValue = toNumber(postWorkoutMinutes);
+    const hasPostWorkout =
+      postWorkoutFcValue !== undefined ||
+      postWorkoutHrvValue !== undefined ||
+      postWorkoutMinutesValue !== undefined;
+
+    const preSleepFcValue = toNumber(preSleepFc);
+    const preSleepHrvValue = toNumber(preSleepHrv);
+    const hasPreSleep = preSleepFcValue !== undefined || preSleepHrvValue !== undefined;
+
+    const nextHealth: HealthSnapshot = {
+      ...healthSnapshot,
+      restingHeartRate: toNumber(restingHeartRate),
+      hrv: toNumber(hrv),
+      sleepHours: toNumber(sleepHours),
+      postWorkout: hasPostWorkout
+        ? {
+            restingHeartRate: postWorkoutFcValue,
+            hrv: postWorkoutHrvValue,
+            minutesAfterWorkout: postWorkoutMinutesValue,
+          }
+        : undefined,
+      preSleep: hasPreSleep ? { restingHeartRate: preSleepFcValue, hrv: preSleepHrvValue } : undefined,
+      updatedAt: now,
+    };
+
+    const nextCoach: CoachMetrics = {
+      technique: coachTechnique,
+      reaction: coachReaction,
+      speed: coachSpeed,
+      explosiveness: coachExplosiveness,
+      strikingPower: coachStrikingPower,
+      mood: coachMood,
+      attitude: coachAttitude,
+      focus: coachFocus,
+      confidence: coachConfidence,
+      coachNotes: coachNotes.trim() || undefined,
+      shareableNote: shareableNote.trim() || undefined,
+    };
+    const hasCoachData = Object.values(nextCoach).some((value) => value !== undefined);
+
     const nextRecord: DailyRecord = {
       date: now.slice(0, 10),
       athleteId: profile.id,
       microcycle: selectedMicrocycle,
-      health: healthSnapshot,
+      health: nextHealth,
       subjective: nextSubjective,
       training: nextTraining,
+      coach: hasCoachData ? nextCoach : undefined,
       notes: notes.trim() || undefined,
       savedAt: now,
     };
 
-    await Promise.all([
-      saveDailyRecord(nextRecord),
-      saveAthleteProfile({
-        ...profile,
-        currentMicrocycle: selectedMicrocycle,
-      } as any),
-      healthBaseline ? saveHealthBaseline(profile.id, healthBaseline) : Promise.resolve(),
-    ]);
+    try {
+      await Promise.all([
+        saveDailyRecord(nextRecord),
+        saveAthleteProfile({
+          ...profile,
+          currentMicrocycle: selectedMicrocycle,
+        }),
+        healthBaseline ? saveHealthBaseline(profile.id, healthBaseline) : Promise.resolve(),
+      ]);
+    } catch (error) {
+      console.error("register.tsx: fallo guardando el registro diario", {
+        athleteId: profile.id,
+        date: nextRecord.date,
+        error,
+      });
+      Alert.alert(
+        "No se pudo guardar",
+        "Ocurrió un error guardando tu registro de hoy. Tus respuestas no se perdieron en esta pantalla — intenta guardar de nuevo."
+      );
+      return;
+    }
 
     Alert.alert("Guardado", "Los datos quedaron registrados correctamente.", [
       {
@@ -359,8 +504,8 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.container}>
           <Text style={styles.brand}>REGISTRO DIARIO</Text>
           <Text style={styles.subtitle}>
-            Responde con botones. Los datos de Health se muestran automáticos y la lógica ATR interpreta
-            todo según el microciclo.
+            El estado general se responde con botones. FC/HRV se ingresan a mano mientras no exista
+            integración con Apple Health — la lógica ATR interpreta todo según el microciclo.
           </Text>
 
           <View style={styles.card}>
@@ -393,41 +538,85 @@ export default function RegisterScreen() {
 
           <View style={styles.card}>
             <SectionTitle
-              title="Datos automáticos de Health"
-              subtitle="Estos valores vendrán desde Apple Health cuando la integración esté lista."
+              title="Lectura matutina en reposo"
+              subtitle="La única lectura que alimenta la Capa 1 del motor ATR. Manual mientras no exista Apple Health."
             />
-            <View style={styles.healthGrid}>
-              <ReadOnlyMetric
-                label="FC reposo"
-                value={healthSnapshot.restingHeartRate}
-                suffix=" lpm"
-                hint="Sincronizado desde Health"
-              />
-              <ReadOnlyMetric
-                label="HRV"
-                value={healthSnapshot.hrv}
-                suffix=" ms"
-                hint="Sincronizado desde Health"
-              />
-              <ReadOnlyMetric
-                label="Sueño"
-                value={healthSnapshot.sleepHours}
-                suffix=" h"
-                hint="Sincronizado desde Health"
-              />
+            <NumericField
+              label="FC reposo (lpm)"
+              value={restingHeartRate}
+              onChangeText={setRestingHeartRate}
+              placeholder="Ej. 52"
+            />
+            <NumericField
+              label="HRV (ms)"
+              value={hrv}
+              onChangeText={setHrv}
+              placeholder="Ej. 95"
+            />
+            <NumericField
+              label="Horas de sueño"
+              value={sleepHours}
+              onChangeText={setSleepHours}
+              placeholder="Ej. 7.5"
+            />
+            {healthSnapshot.activityMinutes ? (
               <ReadOnlyMetric
                 label="Actividad"
                 value={healthSnapshot.activityMinutes}
                 suffix=" min"
                 hint="Sincronizado desde Health"
               />
-            </View>
+            ) : null}
+          </View>
+
+          <View style={styles.card}>
+            <SectionTitle
+              title="Recuperación post-entreno"
+              subtitle="Ventana de captura: 2h ±15min después de terminar el entrenamiento. Fuera de esa ventana, no cuenta para esta métrica."
+            />
+            <NumericField
+              label="FC post-entreno (lpm)"
+              value={postWorkoutFc}
+              onChangeText={setPostWorkoutFc}
+              placeholder="Ej. 58"
+            />
+            <NumericField
+              label="HRV post-entreno (ms)"
+              value={postWorkoutHrv}
+              onChangeText={setPostWorkoutHrv}
+              placeholder="Ej. 85"
+            />
+            <NumericField
+              label="Minutos desde que terminó el entreno"
+              value={postWorkoutMinutes}
+              onChangeText={setPostWorkoutMinutes}
+              placeholder="Ej. 120"
+            />
+          </View>
+
+          <View style={styles.card}>
+            <SectionTitle
+              title="Lectura pre-sueño (opcional)"
+              subtitle="Solo contexto — no se compara contra el baseline ni afecta el estado ATR."
+            />
+            <NumericField
+              label="FC pre-sueño (lpm)"
+              value={preSleepFc}
+              onChangeText={setPreSleepFc}
+              placeholder="Ej. 55"
+            />
+            <NumericField
+              label="HRV pre-sueño (ms)"
+              value={preSleepHrv}
+              onChangeText={setPreSleepHrv}
+              placeholder="Ej. 90"
+            />
           </View>
 
           <View style={styles.card}>
             <SectionTitle
               title="Referencia personal"
-              subtitle="Se usa para comparar tu respuesta actual contra tu baseline."
+              subtitle="Baseline calculado automáticamente (ventana móvil de 7 días) — se usa para comparar tu respuesta actual."
             />
             <View style={styles.healthGrid}>
               <ReadOnlyMetric
@@ -589,6 +778,100 @@ export default function RegisterScreen() {
             />
           </View>
 
+          <View style={[styles.card, styles.coachCard]}>
+            <SectionTitle
+              title="Entrenador (uso del staff)"
+              subtitle="Observación directa del entrenador — señal distinta del autoreporte del atleta de arriba."
+            />
+            <SelectionGroup
+              label="Técnica observada"
+              subtitle="Muy baja/baja aquí puede escalar el estado a Fatiga excesiva (Capa 4)."
+              value={coachTechnique}
+              options={PERFORMANCE_OPTIONS}
+              onChange={setCoachTechnique}
+            />
+            <SelectionGroup
+              label="Reacción"
+              value={coachReaction}
+              options={SPEED_OPTIONS}
+              onChange={setCoachReaction}
+            />
+            <SelectionGroup
+              label="Velocidad"
+              value={coachSpeed}
+              options={SPEED_OPTIONS}
+              onChange={setCoachSpeed}
+            />
+            <SelectionGroup
+              label="Explosividad"
+              value={coachExplosiveness}
+              options={EXPLOSIVENESS_OPTIONS}
+              onChange={setCoachExplosiveness}
+            />
+            <SelectionGroup
+              label="Fuerza del golpe"
+              value={coachStrikingPower}
+              options={POWER_OPTIONS}
+              onChange={setCoachStrikingPower}
+            />
+            <SelectionGroup
+              label="Ánimo"
+              value={coachMood}
+              options={FEELING_OPTIONS}
+              onChange={setCoachMood}
+            />
+            <SelectionGroup
+              label="Actitud"
+              value={coachAttitude}
+              options={FEELING_OPTIONS}
+              onChange={setCoachAttitude}
+            />
+            <SelectionGroup
+              label="Foco / concentración"
+              value={coachFocus}
+              options={FEELING_OPTIONS}
+              onChange={setCoachFocus}
+            />
+            <SelectionGroup
+              label="Confianza"
+              value={coachConfidence}
+              options={MOTIVATION_OPTIONS}
+              onChange={setCoachConfidence}
+            />
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Nota privada</Text>
+              <TextInput
+                value={coachNotes}
+                onChangeText={setCoachNotes}
+                placeholder="Nunca visible para el atleta..."
+                placeholderTextColor="#556071"
+                multiline
+                style={styles.textArea}
+              />
+              <Text style={styles.fieldSubtitle}>
+                Privada por defecto — nunca llega al chat del atleta ni a ninguna vista suya.
+              </Text>
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>Nota compartible</Text>
+              <TextInput
+                value={shareableNote}
+                onChangeText={setShareableNote}
+                placeholder="Ej. indicación técnica puntual para el atleta..."
+                placeholderTextColor="#556071"
+                multiline
+                style={styles.textArea}
+              />
+              <Text style={styles.fieldSubtitle}>
+                Marcada explícitamente como compartible — la única que un futuro chat
+                &ldquo;Entrenador IA&rdquo; podría usar como contexto (esa capa de redacción con IA
+                todavía no está implementada).
+              </Text>
+            </View>
+          </View>
+
           <Pressable onPress={handleSave} style={styles.saveButton}>
             <Text style={styles.saveButtonText}>Guardar registro</Text>
           </Pressable>
@@ -624,6 +907,10 @@ const styles = StyleSheet.create({
     borderColor: "#1F2735",
     padding: 16,
     marginBottom: 16,
+  },
+  coachCard: {
+    borderColor: "#3A2430",
+    backgroundColor: "#15111A",
   },
   sectionHeader: { marginBottom: 14 },
   sectionTitle: {
