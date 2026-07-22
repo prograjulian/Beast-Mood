@@ -26,6 +26,18 @@ export interface CoachMetrics {
    * solo deja el modelo de datos listo para cuando exista.
    */
   shareableNote?: string;
+  /**
+   * Resultado de competencia del día -- alimenta el Perfil Competitivo
+   * Individual (Motor ATR §13): "podio" marca este día como uno de los
+   * mejores resultados históricos reales del atleta, candidato a construir
+   * el vector de referencia personalizado. Lo determina el entrenador/staff
+   * (resultado oficial), no el atleta. Sin relación con los estados ATR del
+   * día (un día con estado "Fatiga funcional" puede igual ser un día de
+   * podio si la competencia salió bien).
+   */
+  competitionResult?: "podio" | "sin_podio";
+  /** Nombre/torneo de la competencia -- opcional, solo contexto. */
+  competitionName?: string;
 }
 
 export const emptyCoachMetrics: CoachMetrics = {};

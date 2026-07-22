@@ -303,6 +303,40 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
+        {/*
+          Perfil Competitivo Individual (Motor ATR §13) -- información de
+          contexto, todavía NO reemplaza el perfil genérico de arriba (ver
+          comentario en competitiveProfileEngine.ts sobre el alcance
+          incompleto a propósito de esta primera implementación).
+        */}
+        {atr.competitiveProfile ? (
+          <View style={styles.card}>
+            <Text style={styles.label}>PERFIL COMPETITIVO INDIVIDUAL</Text>
+            {atr.competitiveProfile.available && atr.competitiveProfile.vector ? (
+              <>
+                <Text style={styles.value}>
+                  {atr.competitiveProfile.podiumCount} podios registrados
+                </Text>
+                <Text style={styles.hint}>
+                  FC: {formatNumber(atr.competitiveProfile.vector.restingHeartRate)} · HRV:{" "}
+                  {formatNumber(atr.competitiveProfile.vector.hrv)} · Sueño:{" "}
+                  {formatNumber(atr.competitiveProfile.vector.sleepHours, " h")}
+                </Text>
+                <Text style={[styles.hint, { marginTop: 4 }]}>
+                  Piernas: {formatNumber(atr.competitiveProfile.vector.legFeeling)} · Explosividad:{" "}
+                  {formatNumber(atr.competitiveProfile.vector.explosiveness)} · Confianza:{" "}
+                  {formatNumber(atr.competitiveProfile.vector.confidence)}
+                </Text>
+                <Text style={[styles.hint, { marginTop: 8, fontStyle: "italic" }]}>
+                  Referencia informativa -- todavía no reemplaza el perfil genérico de §1.6 arriba.
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.hint}>{atr.competitiveProfile.note}</Text>
+            )}
+          </View>
+        ) : null}
+
         <Pressable
           onPress={() => router.push("/register")}
           style={styles.saveButton}

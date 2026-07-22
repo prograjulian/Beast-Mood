@@ -28,6 +28,7 @@ import {
   toFatigueAxis,
   withinRange,
 } from "./physiologicalRanges";
+import { evaluateCompetitiveProfile } from "./competitiveProfileEngine";
 import { evaluateInjuryRisk } from "./injuryRiskEngine";
 import { evaluatePostWorkoutTrend, observePostWorkoutRecovery } from "./postWorkoutEngine";
 
@@ -993,6 +994,14 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
       ? evaluateCompetitionReadiness(fcDelta, hrvDelta, subjective, coach)
       : undefined;
 
+  // Perfil Competitivo Individual (Motor ATR §13) -- mismo gate que "Listo
+  // para competir": solo tiene sentido evaluarlo en el microciclo
+  // Competitivo. Ver competitiveProfileEngine.ts para el alcance
+  // deliberadamente incompleto (todavía NO reemplaza el perfil genérico en
+  // competitionReadiness, es información de contexto).
+  const competitiveProfile =
+    microcycle === "Competitivo" && history ? evaluateCompetitiveProfile(history) : undefined;
+
   const confidenceLevel = computeConfidenceLevel(baseline, health, subjective, borg);
 
   let message = "";
@@ -1068,6 +1077,7 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
     postWorkoutObservation,
     postWorkoutTrend,
     competitionReadiness,
+    competitiveProfile,
     confidenceLevel,
     injuryRisk,
   };

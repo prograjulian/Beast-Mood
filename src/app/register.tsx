@@ -311,6 +311,11 @@ export default function RegisterScreen() {
   // compartir es una acción explícita, nunca inferida.
   const [coachNotes, setCoachNotes] = useState("");
   const [shareableNote, setShareableNote] = useState("");
+  // Resultado de competencia -- alimenta el Perfil Competitivo Individual
+  // (Motor ATR §13). Lo determina el staff, no el atleta; solo tiene
+  // sentido en el microciclo Competitivo (gateado en el JSX de abajo).
+  const [competitionResult, setCompetitionResult] = useState<"podio" | "sin_podio" | undefined>();
+  const [competitionName, setCompetitionName] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -447,6 +452,15 @@ export default function RegisterScreen() {
       confidence: coachConfidence,
       coachNotes: coachNotes.trim() || undefined,
       shareableNote: shareableNote.trim() || undefined,
+      // No se gatea por `selectedMicrocycle` acá (a diferencia de la
+      // visibilidad del picker más abajo, que sí es solo para Competitivo):
+      // si se forzara a `undefined` cuando el microciclo actual no es
+      // Competitivo, re-guardar el mismo día después de cambiar el
+      // microciclo borraría en silencio un podio ya marcado (hallazgo de
+      // data-schema-reviewer). El estado solo se llena si el picker estuvo
+      // visible en algún momento de esta sesión de edición.
+      competitionResult,
+      competitionName: competitionName.trim() || undefined,
     };
     const hasCoachData = Object.values(nextCoach).some((value) => value !== undefined);
 
@@ -848,6 +862,39 @@ export default function RegisterScreen() {
               options={MOTIVATION_OPTIONS}
               onChange={setCoachConfidence}
             />
+
+            {selectedMicrocycle === "Competitivo" ? (
+              <View style={styles.fieldBlock}>
+                <Text style={styles.fieldLabel}>Resultado de competencia</Text>
+                <Text style={styles.fieldSubtitle}>
+                  Alimenta el Perfil Competitivo Individual (Motor ATR §13) -- solo tiene sentido si
+                  hoy fue día de competencia.
+                </Text>
+                <View style={styles.optionWrap}>
+                  {(["podio", "sin_podio"] as const).map((option) => {
+                    const active = competitionResult === option;
+                    return (
+                      <Pressable
+                        key={option}
+                        onPress={() => setCompetitionResult(option)}
+                        style={[styles.optionChip, active && styles.optionChipActive]}
+                      >
+                        <Text style={[styles.optionText, active && styles.optionTextActive]}>
+                          {option === "podio" ? "Podio" : "Sin podio"}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  value={competitionName}
+                  onChangeText={setCompetitionName}
+                  placeholder="Ej. Nacional 2026 (opcional)"
+                  placeholderTextColor="#556071"
+                  style={styles.input}
+                />
+              </View>
+            ) : null}
 
             <View style={styles.fieldBlock}>
               <Text style={styles.fieldLabel}>Nota privada</Text>

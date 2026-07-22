@@ -77,13 +77,16 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-22 — se encontraron los documentos maestro reales en disco
+> Última actualización: 2026-07-22 — Perfil Competitivo Individual (Motor ATR §13) implementado
+> (deliberadamente sin wirear todavía al veredicto "Listo para competir"): `competitiveProfileEngine
+> .ts`, captura de resultados de competencia en `register.tsx`, card informativa en `home.tsx`. Ver
+> la novena entrada de sesión 2026-07-22 en sección 6.
+> Octava ronda (2026-07-21/22): se encontraron los documentos maestro reales en disco
 > (`C:\Users\danic\Downloads\MotorcentralBeastM\`, ver sección 9) — hasta ahora las sesiones
 > trabajaban solo con el resumen de este archivo. Esto resolvió de verdad (no solo con un toggle)
 > la separación Dashboard Atleta/Entrenador: nueva ruta `src/app/athlete.tsx` con las 4 categorías
 > exactas del Documento Maestro Extendido §6.1, `home.tsx` como vista entrenador pura, lógica de
-> carga compartida en `src/hooks/useAtrToday.ts`. Ver la octava entrada de sesión 2026-07-21/22 en
-> sección 6.
+> carga compartida en `src/hooks/useAtrToday.ts`.
 > Séptima ronda (2026-07-21): nueva ruta `health-import.tsx`
 > (deep link `beastmoodapp://health-import?fc=...&hrv=...&sleep=...`) para importar datos del
 > Apple Watch vía un Atajo de iOS, sin HealthKit nativo ni cuenta Apple Developer de pago (el
@@ -378,15 +381,21 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
    fórmula literal no la cumple en la práctica -- pero cambia el método, no solo el número, así que
    se marca explícitamente pendiente de que el entrenador la confirme o pida la fórmula clásica de
    todas formas.
-7. Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual
-   (Motor ATR sección 13, texto completo leído el 2026-07-22 — ver sección 9 para dónde está el
-   documento) tome precedencia sobre el perfil genérico (propuesta del propio documento: 3–5
-   podios, sin decidir cuál). **La mecánica en sí SÍ está decidida** (tomar los N mejores
-   resultados históricos del atleta — ej. últimos torneos con medalla — y construir un vector de
-   referencia personalizado con FC/HRV/sueño/piernas/explosividad/confianza de esos días
-   específicos, para comparar futuras semanas competitivas contra ese perfil en vez del genérico
-   §1.6) — solo falta el número. Sigue sin implementar en código (ver sección 6, octava entrada
-   2026-07-21/22 — quedó identificado pero deliberadamente no construido esa ronda).
+7. ~~Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual tome
+   precedencia sobre el perfil genérico~~ **implementado el 2026-07-22, pero a propósito
+   INCOMPLETO** (Motor ATR sección 13). `src/engine/competitiveProfileEngine.ts`
+   (`evaluateCompetitiveProfile`) calcula el vector de referencia (FC/HRV/sueño/piernas/
+   explosividad/confianza promediados de los días marcados como "podio") y el gate de historial
+   insuficiente, con el mismo patrón honesto que Nivel 3. Umbral usado: 3 (el extremo más
+   permisivo de la propuesta "3–5 podios" del documento, sin confirmar cuál específicamente —
+   provisional, documentado como tal en el código). **Lo que falta a propósito:** este perfil
+   personalizado NO reemplaza todavía el perfil genérico dentro de `evaluateCompetitionReadiness`
+   ("Listo para competir") — se muestra solo como información de contexto en `home.tsx`. Wirearlo
+   de verdad requiere decidir qué tolerancia usar alrededor del promedio personalizado y si las
+   variables obligatorias cambian, nada de eso está especificado — se dejó para una ronda futura
+   en vez de improvisarlo. Captura nueva en `register.tsx`: card "Resultado de competencia"
+   (podio/sin podio + nombre opcional) dentro de "Entrenador (uso del staff)", visible solo en
+   microciclo Competitivo, persistida en `CoachMetrics.competitionResult`/`competitionName`.
 8. ~~Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
    numéricos entre Bajo/Moderado/Alto/Crítico~~ **resuelto el 2026-07-21** — árbol de decisión
    acumulativo en `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`). **Confirmado el
@@ -867,6 +876,33 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   ambas funciona. `npx tsc --noEmit`, `npm run lint`, `npm test` (100/100) limpios. Próximo paso
   sugerido: Perfil Competitivo Individual (mecánica ya decidida, ver arriba), o retomar Apple
   Health/backend de IA cuando el usuario resuelva cuenta/red.
+- **2026-07-22 (novena ronda)** — Se implementó el Perfil Competitivo Individual identificado en la
+  ronda anterior (Motor ATR §13, ver detalle completo en sección 5 punto 7): nuevo
+  `src/engine/competitiveProfileEngine.ts` (`evaluateCompetitiveProfile`), nuevos campos
+  `CoachMetrics.competitionResult`/`competitionName`, nueva card de captura en `register.tsx`
+  (gateada al microciclo Competitivo), y una card informativa nueva en `home.tsx`. Deliberadamente
+  NO wireado dentro del veredicto "Listo para competir" todavía — mismo patrón de alcance
+  incompleto que Nivel 3, documentado explícitamente en el código y aquí.
+  `data-schema-reviewer` (obligatorio por CLAUDE.md §10.5, cambio a `CoachMetrics` persistido)
+  encontró un hallazgo real: `handleSave` gateaba el GUARDADO de `competitionResult`/
+  `competitionName` por `selectedMicrocycle === "Competitivo"` (no solo la visibilidad del
+  picker) — si el mismo día se volvía a guardar más tarde con el dropdown ya en otro microciclo,
+  un podio ya marcado se borraba en silencio. Corregido: el gate de guardado se quitó (solo la
+  visibilidad del picker sigue gateada), el valor ya capturado en el estado del formulario se
+  persiste tal cual. **Limitación pre-existente más amplia que este fix NO resuelve, señalada
+  explícitamente en vez de ignorada:** `register.tsx` nunca precarga el `DailyRecord` ya guardado
+  del día actual al abrir la pantalla — cualquier campo no vuelto a tocar en un re-guardado del
+  mismo día se pierde (patrón general del archivo, no específico de este feature). Cubre el caso
+  más peligroso (coerción activa a `undefined` por un cambio de dropdown no relacionado), no el
+  caso general (reabrir la pantalla fresca y guardar sin recordar tocar todos los campos) — quedaría
+  para una ronda futura si se decide precargar el registro del día. Tests nuevos en
+  `competitiveProfileEngine.test.ts` (4 casos: sin podios, por debajo del mínimo, disponible con
+  vector correcto, historial vacío). Verificado en el navegador: la card "Resultado de
+  competencia" aparece solo en Competitivo, guardar un podio hace que `home.tsx` muestre
+  "Historial competitivo insuficiente para un perfil personalizado (1/3 podios)". 104/104 tests,
+  `tsc`/`eslint` limpios. Próximo paso sugerido: Apple Health/backend de IA cuando el usuario
+  resuelva cuenta/red, o decidir si vale la pena precargar el registro del día en `register.tsx`
+  (limitación general señalada arriba).
 
 ---
 

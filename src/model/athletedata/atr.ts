@@ -128,6 +128,33 @@ export interface PreviousDayComparison {
   note: string;
 }
 
+/**
+ * Perfil Competitivo Individual (Motor ATR §13, texto completo leído el
+ * 2026-07-22 -- ver CLAUDE.md §9 para dónde vive el documento fuente y
+ * src/engine/competitiveProfileEngine.ts para el cálculo). Vector de
+ * referencia construido a partir de los mejores resultados históricos
+ * reales del atleta (días de podio), NO reemplaza todavía el perfil
+ * genérico del microciclo Competitivo dentro del veredicto "Listo para
+ * competir" -- ver el comentario en competitiveProfileEngine.ts para el
+ * alcance deliberadamente incompleto de esta primera implementación.
+ */
+export interface CompetitiveProfileVector {
+  restingHeartRate?: number;
+  hrv?: number;
+  sleepHours?: number;
+  legFeeling?: number;
+  explosiveness?: number;
+  confidence?: number;
+}
+
+export interface CompetitiveProfileResult {
+  available: boolean;
+  podiumCount: number;
+  minimumRequired: number;
+  vector?: CompetitiveProfileVector;
+  note: string;
+}
+
 export interface ATRInterpretation {
   state: ATRState;
   message?: string;
@@ -141,6 +168,7 @@ export interface ATRInterpretation {
   postWorkoutObservation?: PostWorkoutObservation;
   postWorkoutTrend?: PostWorkoutTrendResult;
   competitionReadiness?: ReadinessEvaluation;
+  competitiveProfile?: CompetitiveProfileResult;
   confidenceLevel?: ConfidenceLevel;
   injuryRisk?: InjuryRiskEvaluation;
 }
