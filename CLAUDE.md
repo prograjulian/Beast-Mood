@@ -77,7 +77,14 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-21 — séptima ronda del día: nueva ruta `health-import.tsx`
+> Última actualización: 2026-07-22 — se encontraron los documentos maestro reales en disco
+> (`C:\Users\danic\Downloads\MotorcentralBeastM\`, ver sección 9) — hasta ahora las sesiones
+> trabajaban solo con el resumen de este archivo. Esto resolvió de verdad (no solo con un toggle)
+> la separación Dashboard Atleta/Entrenador: nueva ruta `src/app/athlete.tsx` con las 4 categorías
+> exactas del Documento Maestro Extendido §6.1, `home.tsx` como vista entrenador pura, lógica de
+> carga compartida en `src/hooks/useAtrToday.ts`. Ver la octava entrada de sesión 2026-07-21/22 en
+> sección 6.
+> Séptima ronda (2026-07-21): nueva ruta `health-import.tsx`
 > (deep link `beastmoodapp://health-import?fc=...&hrv=...&sleep=...`) para importar datos del
 > Apple Watch vía un Atajo de iOS, sin HealthKit nativo ni cuenta Apple Developer de pago (el
 > usuario tiene iPhone pero no cuenta Developer). Ver la séptima entrada de sesión 2026-07-21 en
@@ -301,14 +308,18 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       puede construirse aparte SIN romper esto (deep link y HealthKit no son mutuamente excluyentes,
       pueden convivir).
 - [x] `athleteRepository.ts` también vacío (0 líneas).
-- [x] ~~No hay separación Dashboard Atleta / Dashboard Entrenador~~ **parcialmente resuelto el
-      2026-07-21** — `home.tsx` gana un toggle de UI "Vista Entrenador / Vista Atleta" (`viewMode`)
-      que oculta la card "Listo para competir" en modo Atleta (antes solo era un comentario sin
-      aplicar en código). Es explícitamente un filtro de PRESENTACIÓN, no una separación real de
-      pantallas/rutas ni un límite de seguridad (el proyecto sigue en fase single-user, sin
-      auth/roles, CLAUDE.md §0) — sigue sin existir una pantalla de atleta genuinamente separada
-      (ruta propia, contenido propio más allá de ocultar una card). Cuando exista multi-usuario
-      real, este toggle debe reemplazarse por una separación real, no solo ampliarse.
+- [x] ~~No hay separación Dashboard Atleta / Dashboard Entrenador~~ **resuelto de verdad el
+      2026-07-22** (el 2026-07-21 solo hubo un toggle parcial, ver historial en sección 6). Al
+      encontrarse los documentos maestro reales en disco (`Downloads\MotorcentralBeastM\`, ver
+      sección 9), apareció la especificación exacta que faltaba: Documento Maestro Extendido §6.1
+      (Dashboard Atleta: Estado general, Tendencias, Recomendaciones, Historial — "sin lógica
+      interna ni todas las variables") y §6.2 (Dashboard Entrenador: todo el detalle, alertas,
+      disonancias). Con esa base: `src/app/athlete.tsx` es una ruta NUEVA y genuinamente separada
+      (no un toggle) con exactamente esas 4 categorías; `home.tsx` queda como la vista entrenador
+      pura (se quitó el toggle, ya no hace falta). Lógica de carga compartida extraída a
+      `src/hooks/useAtrToday.ts` para no duplicar el recálculo/guardado del baseline en dos
+      pantallas. Sigue siendo fase single-user sin auth real — la separación es de contenido/rutas,
+      no de permisos — pero ya no depende de un toggle manual ni de acordarse de excluir una card.
 - [x] ~~`CoachMetrics` existe como modelo (guardado/leído) pero ninguna pantalla lo captura
       todavía~~ **resuelto el 2026-07-21** — se captura en una card dedicada dentro de
       `register.tsx` ("Entrenador (uso del staff)"). Sigue sin existir una pantalla SEPARADA para
@@ -368,7 +379,14 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
    se marca explícitamente pendiente de que el entrenador la confirme o pida la fórmula clásica de
    todas formas.
 7. Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual
-   (Motor ATR sección 13) tome precedencia sobre el perfil genérico (propuesta a validar: 3–5 podios).
+   (Motor ATR sección 13, texto completo leído el 2026-07-22 — ver sección 9 para dónde está el
+   documento) tome precedencia sobre el perfil genérico (propuesta del propio documento: 3–5
+   podios, sin decidir cuál). **La mecánica en sí SÍ está decidida** (tomar los N mejores
+   resultados históricos del atleta — ej. últimos torneos con medalla — y construir un vector de
+   referencia personalizado con FC/HRV/sueño/piernas/explosividad/confianza de esos días
+   específicos, para comparar futuras semanas competitivas contra ese perfil en vez del genérico
+   §1.6) — solo falta el número. Sigue sin implementar en código (ver sección 6, octava entrada
+   2026-07-21/22 — quedó identificado pero deliberadamente no construido esa ronda).
 8. ~~Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
    numéricos entre Bajo/Moderado/Alto/Crítico~~ **resuelto el 2026-07-21** — árbol de decisión
    acumulativo en `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`). **Confirmado el
@@ -804,6 +822,51 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   `npm run lint`, `npm test` (100/100) limpios, revisado por `code-reviewer`. Próximo paso: el
   usuario arma el Atajo en su iPhone (instrucciones dadas en el chat, no en este archivo) y lo
   prueba con la app real (no solo el navegador) — pendiente de confirmar en un dispositivo real.
+- **2026-07-21/22 (octava ronda)** — El Atajo no se pudo probar en el momento (el iPhone del
+  usuario estaba en la red de la universidad, distinta de la red donde corre `expo start` —
+  diagnóstico del propio usuario, plausible y sin acción de código pendiente por ahora) y pidió
+  seguir con lo que sigue del proyecto. Antes de improvisar qué hacer después, se buscó si los
+  documentos maestro que CLAUDE.md cita como fuente de verdad (`Beast_Mood_Motor_ATR_v1.md`,
+  `Beast_Mood_Documento_Maestro_Extendido.md`, `Beast_Mood_Preguntas_Estructurales.md`,
+  `Beast_Mood_System_Prompt.md`) existían en algún lugar de la máquina más allá del repo —
+  **sí existen**, completos, en `C:\Users\danic\Downloads\MotorcentralBeastM\` (ver sección 9 para
+  la ubicación exacta y la nota de que las sesiones anteriores no lo sabían). Se leyeron los 4
+  documentos completos. Hallazgos que cambian el estado de varios pendientes:
+  - **Documento Maestro Extendido §6.1/§6.2 da la especificación exacta del Dashboard Atleta y
+    Entrenador** que antes no existía en ningún lado accesible — esto resuelve de verdad (no con un
+    toggle) el gap de separación de dashboards, ver el detalle en sección 4. Refactor de apoyo:
+    `src/hooks/useAtrToday.ts` extrae la lógica de carga/evaluación que antes vivía solo en
+    `home.tsx` (perfil, baseline con recálculo+guardado, historial, `evaluateATR`, persistir
+    `atrState`) para que `home.tsx` y el nuevo `athlete.tsx` no la dupliquen cada uno por su
+    cuenta. `code-reviewer` encontró que el comentario original sobreclamaba (decía que esto
+    evitaba una doble escritura del baseline si ambas pantallas estaban montadas, lo cual no era
+    del todo cierto) y que faltaba una guarda de desmontaje — ambos corregidos: comentario
+    reescrito para no sobreclamar, guarda `cancelled` agregada, y los links cruzados entre
+    `home.tsx`/`athlete.tsx` pasan a `router.replace` en vez de `router.push` para no apilar
+    instancias montadas navegando rápido entre las dos vistas.
+  - **Motor ATR §13 confirma que el Perfil Competitivo Individual ya tiene mecánica decidida**
+    (tomar los N mejores resultados competitivos históricos del atleta — ej. últimos torneos con
+    medalla — y construir un vector de referencia personalizado con sus propios valores de esos
+    días, para comparar futuras semanas competitivas contra ESE perfil en vez del genérico §1.6).
+    Solo falta el número exacto de resultados mínimos (propuesta del propio documento: 3-5 podios,
+    sin decidir cuál). **No implementado todavía en esta ronda** — queda para la próxima, es una
+    pieza grande (nueva captura de resultados competitivos + motor nuevo) y esta ronda ya cerraba
+    con la separación de dashboards.
+  - **Motor ATR §5.5 (Índice de Evolución ATR) explícitamente NO debe implementarse todavía** — el
+    propio documento fuente dice "Pendiente de diseño (no inventar el cálculo sin validarlo
+    contigo)" para la fórmula exacta. A diferencia del Perfil Competitivo (mecánica decidida, solo
+    falta un número), acá la mecánica misma no está cerrada — se mantiene como pendiente real, sin
+    tocar, coherente con CLAUDE.md §2 (no inventar juicio deportivo).
+  - Documento Maestro Extendido §6.2 también confirma que los 4 tipos de alerta de Motor ATR §11.4
+    SÍ son los mismos que van al Dashboard Entrenador (CLAUDE.md §5 punto 9, antes sin confirmar) —
+    sin acción de código, ya están implementados como parte del IRL.
+  Verificado en el navegador: `/athlete` muestra las 4 categorías correctas y nunca "Listo para
+  competir" (doble barrera: la pantalla no lee `competitionReadiness`, y `explanationEngine.ts` ya
+  excluía `readiness` del payload para `audience:"athlete"` desde una ronda anterior); `/home`
+  muestra el detalle completo sin depender de ningún toggle; la navegación `router.replace` entre
+  ambas funciona. `npx tsc --noEmit`, `npm run lint`, `npm test` (100/100) limpios. Próximo paso
+  sugerido: Perfil Competitivo Individual (mecánica ya decidida, ver arriba), o retomar Apple
+  Health/backend de IA cuando el usuario resuelva cuenta/red.
 
 ---
 
@@ -833,6 +896,15 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 ---
 
 ## 9. Documentos fuente de verdad (no reemplazan este archivo, lo alimentan)
+
+> **Ubicación real en disco (encontrada el 2026-07-22):** `C:\Users\danic\Downloads\MotorcentralBeastM\`
+> — no están en el repo de Git, viven fuera de `BeastMoodApp\`. Hay una copia parcial más vieja en
+> `C:\Users\danic\Downloads\motordeBM\` (solo Motor ATR v1 y Preguntas Estructurales) — usar siempre
+> la de `MotorcentralBeastM`, es la más completa. Antes de esta fecha, las sesiones trabajaban solo
+> con el resumen de este archivo porque no se sabía que los documentos originales estaban
+> accesibles en la máquina — a partir de ahora, para cualquier sección marcada "pendiente" o "no
+> inventar sin validar" en este archivo, leer el documento fuente real primero, no asumir que sigue
+> sin definir.
 
 - `Beast_Mood_System_Prompt.md` — instrucciones de operación del proyecto.
 - `Beast_Mood_Documento_Maestro_Extendido.md` — visión, objetivos, dashboards, arquitectura.
