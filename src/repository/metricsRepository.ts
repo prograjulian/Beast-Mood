@@ -60,6 +60,20 @@ export async function getLatestDailyRecord(athleteId: string): Promise<DailyReco
   return history.length > 0 ? history[history.length - 1] : null;
 }
 
+/**
+ * Registro ya guardado de un día puntual (si existe). Usado por register.tsx
+ * para precargar el formulario cuando el atleta reabre o re-guarda el mismo
+ * día -- sin esto, un campo no vuelto a tocar en un re-guardado se pierde
+ * (limitación señalada en CLAUDE.md, novena ronda 2026-07-22).
+ */
+export async function getDailyRecordByDate(
+  athleteId: string,
+  date: string
+): Promise<DailyRecord | null> {
+  const history = await getDailyHistory(athleteId);
+  return history.find((entry) => entry.date === date) ?? null;
+}
+
 export async function saveHealthBaseline(
   athleteId: string,
   baseline: HealthBaseline

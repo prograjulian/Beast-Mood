@@ -25,6 +25,7 @@ import {
 import { type SubjectiveMetrics } from "../model/athletedata/subjective";
 import { calculateInternalLoad, type TrainingLoad } from "../model/athletedata/training";
 import {
+    getDailyRecordByDate,
     getHealthBaseline,
     getLiveHealthSnapshot,
     saveDailyRecord,
@@ -253,6 +254,16 @@ export default function RegisterScreen() {
 
   const [loading, setLoading] = useState(true);
 
+  // Campos calculados del motor ATR (useAtrToday.ts los persiste cada vez
+  // que se abre home.tsx/athlete.tsx) del registro de HOY, si ya existía uno
+  // al abrir esta pantalla. handleSave los conserva al reconstruir el
+  // registro -- perderlos en un re-guardado violaría CLAUDE.md §8 ("ninguna
+  // bandera de disonancia se descarta"). Quedan potencialmente desactualizados
+  // hasta la próxima visita a home/athlete, que ya los recalcula.
+  const [existingComputedFields, setExistingComputedFields] = useState<
+    Pick<DailyRecord, "atrState" | "dissonanceLabel" | "divergenceFcHrv"> | undefined
+  >();
+
   const [selectedMicrocycle, setSelectedMicrocycle] = useState<MicrocycleType>("Ajuste");
 
   const [healthBaseline, setHealthBaseline] = useState<HealthBaseline>(emptyHealthBaseline);
@@ -326,9 +337,12 @@ export default function RegisterScreen() {
           return;
         }
 
-        const [storedBaseline, storedSnapshot] = await Promise.all([
+        const today = new Date().toISOString().slice(0, 10);
+
+        const [storedBaseline, storedSnapshot, todayRecord] = await Promise.all([
           getHealthBaseline(profile.id),
           getLiveHealthSnapshot(profile.id),
+          getDailyRecordByDate(profile.id, today),
         ]);
 
         if (storedBaseline) setHealthBaseline(storedBaseline);
@@ -351,8 +365,17 @@ export default function RegisterScreen() {
         if (microcycleFromProfile && MICROCYCLES.includes(microcycleFromProfile)) {
           setSelectedMicrocycle(microcycleFromProfile);
         }
+
+        if (todayRecord) {
+          // El registro YA GUARDADO de hoy gana sobre el snapshot "live" y el
+          // microciclo del perfil de arriba -- es la fuente de verdad de lo
+          // ya confirmado este mismo día. Resuelve la limitación señalada en
+          // CLAUDE.md (novena ronda 2026-07-22): reabrir la pantalla o
+          // re-guardar más tarde el mismo día ya no pierde campos no tocados.
+          applyTodayRecord(todayRecord);
+        }
       } catch (error) {
-        console.error("register.tsx: fallo cargando perfil/baseline/snapshot previo", error);
+        console.error("register.tsx: fallo cargando perfil/baseline/snapshot/registro de hoy", error);
         Alert.alert(
           "No se pudo cargar el registro",
           "Ocurrió un error leyendo tus datos guardados. Puedes seguir e intentar guardar de nuevo."
@@ -361,6 +384,80 @@ export default function RegisterScreen() {
         setLoading(false);
       }
     };
+
+    function applyTodayRecord(record: DailyRecord) {
+      setExistingComputedFields({
+        atrState: record.atrState,
+        dissonanceLabel: record.dissonanceLabel,
+        divergenceFcHrv: record.divergenceFcHrv,
+      });
+
+      if (record.microcycle) setSelectedMicrocycle(record.microcycle);
+
+      setHealthSnapshot(record.health);
+      if (typeof record.health.restingHeartRate === "number") {
+        setRestingHeartRate(String(record.health.restingHeartRate));
+      }
+      if (typeof record.health.hrv === "number") {
+        setHrv(String(record.health.hrv));
+      }
+      if (typeof record.health.sleepHours === "number") {
+        setSleepHours(String(record.health.sleepHours));
+      }
+      if (typeof record.health.postWorkout?.restingHeartRate === "number") {
+        setPostWorkoutFc(String(record.health.postWorkout.restingHeartRate));
+      }
+      if (typeof record.health.postWorkout?.hrv === "number") {
+        setPostWorkoutHrv(String(record.health.postWorkout.hrv));
+      }
+      if (typeof record.health.postWorkout?.minutesAfterWorkout === "number") {
+        setPostWorkoutMinutes(String(record.health.postWorkout.minutesAfterWorkout));
+      }
+      if (typeof record.health.preSleep?.restingHeartRate === "number") {
+        setPreSleepFc(String(record.health.preSleep.restingHeartRate));
+      }
+      if (typeof record.health.preSleep?.hrv === "number") {
+        setPreSleepHrv(String(record.health.preSleep.hrv));
+      }
+
+      const s = record.subjective;
+      setFatigue(s.fatigue);
+      setMusclePain(s.musclePain);
+      setStress(s.stress);
+      setMotivation(s.motivation);
+      setDiscomfort(s.discomfort);
+      setOverallPerformance(s.overallPerformance);
+      setTechniqueQuality(s.techniqueQuality);
+      setSpeedReaction(s.speedReaction);
+      setExplosiveness(s.explosiveness);
+      setStrikingPower(s.strikingPower);
+      setEaseOfExit(s.easeOfExit);
+      setLegFeeling(s.legFeeling);
+
+      setBorgCR10(record.training.borgCR10);
+      if (typeof record.training.durationMinutes === "number") {
+        setDurationMinutes(String(record.training.durationMinutes));
+      }
+
+      setNotes(record.notes ?? s.athleteNotes ?? "");
+
+      if (record.coach) {
+        const c = record.coach;
+        setCoachTechnique(c.technique);
+        setCoachReaction(c.reaction);
+        setCoachSpeed(c.speed);
+        setCoachExplosiveness(c.explosiveness);
+        setCoachStrikingPower(c.strikingPower);
+        setCoachMood(c.mood);
+        setCoachAttitude(c.attitude);
+        setCoachFocus(c.focus);
+        setCoachConfidence(c.confidence);
+        setCoachNotes(c.coachNotes ?? "");
+        setShareableNote(c.shareableNote ?? "");
+        setCompetitionResult(c.competitionResult);
+        setCompetitionName(c.competitionName ?? "");
+      }
+    }
 
     load();
   }, [router]);
@@ -465,6 +562,11 @@ export default function RegisterScreen() {
     const hasCoachData = Object.values(nextCoach).some((value) => value !== undefined);
 
     const nextRecord: DailyRecord = {
+      // Conserva atrState/dissonanceLabel/divergenceFcHrv del registro de hoy
+      // ya existente (si lo había) -- CLAUDE.md §8, ver comentario junto a
+      // existingComputedFields. useAtrToday.ts los recalcula en la próxima
+      // visita a home/athlete de todas formas.
+      ...existingComputedFields,
       date: now.slice(0, 10),
       athleteId: profile.id,
       microcycle: selectedMicrocycle,

@@ -77,12 +77,21 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-22 — el Perfil Competitivo Individual (novena ronda) queda
-> CONECTADO de verdad al veredicto "Listo para competir": `evaluateCompetitionReadiness` compara
-> variable por variable contra el perfil personalizado cuando está disponible, con tolerancia
-> provisional (±8%/±1 punto). `code-reviewer` encontró y se corrigió un bug real de gating
-> (FC/HRV exigían baseline aunque el personalizado no lo necesitaba). Ver la décima entrada de
-> sesión 2026-07-22 en sección 6.
+> Última actualización: 2026-07-23 — resuelta la limitación de precarga de `register.tsx` señalada
+> en la novena ronda (2026-07-22): la pantalla ahora precarga el `DailyRecord` ya guardado de HOY
+> (si existe) sobre el snapshot "live" de Health, así que reabrir o re-guardar la pantalla el mismo
+> día ya no pierde campos no vueltos a tocar. `code-reviewer` encontró un bug real en el mismo
+> cambio: `handleSave` reconstruía el registro desde cero y perdía `atrState`/`dissonanceLabel`/
+> `divergenceFcHrv` (calculados por `useAtrToday.ts`) en cada re-guardado — corregido. Verificado
+> en el navegador real (no solo tests): guardar → visitar `/home` (persiste atrState) → reabrir
+> `/register` → agregar post-entreno y nota de entrenador → re-guardar → todo (lo viejo, lo nuevo, y
+> atrState/divergenceFcHrv) sobrevive intacto en `AsyncStorage`. Ver la undécima entrada de sesión
+> 2026-07-23 en sección 6.
+> Décima ronda (2026-07-22): Perfil Competitivo Individual queda CONECTADO de verdad al veredicto
+> "Listo para competir": `evaluateCompetitionReadiness` compara variable por variable contra el
+> perfil personalizado cuando está disponible, con tolerancia provisional (±8%/±1 punto).
+> `code-reviewer` encontró y se corrigió un bug real de gating (FC/HRV exigían baseline aunque el
+> personalizado no lo necesitaba).
 > Novena ronda (2026-07-22): Perfil Competitivo Individual implementado por primera vez
 > (deliberadamente sin wirear al veredicto todavía en ese momento): `competitiveProfileEngine.ts`,
 > captura de resultados de competencia en `register.tsx`, card informativa en `home.tsx`.
@@ -918,13 +927,11 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   picker) — si el mismo día se volvía a guardar más tarde con el dropdown ya en otro microciclo,
   un podio ya marcado se borraba en silencio. Corregido: el gate de guardado se quitó (solo la
   visibilidad del picker sigue gateada), el valor ya capturado en el estado del formulario se
-  persiste tal cual. **Limitación pre-existente más amplia que este fix NO resuelve, señalada
-  explícitamente en vez de ignorada:** `register.tsx` nunca precarga el `DailyRecord` ya guardado
-  del día actual al abrir la pantalla — cualquier campo no vuelto a tocar en un re-guardado del
-  mismo día se pierde (patrón general del archivo, no específico de este feature). Cubre el caso
-  más peligroso (coerción activa a `undefined` por un cambio de dropdown no relacionado), no el
-  caso general (reabrir la pantalla fresca y guardar sin recordar tocar todos los campos) — quedaría
-  para una ronda futura si se decide precargar el registro del día. Tests nuevos en
+  persiste tal cual. ~~**Limitación pre-existente más amplia que este fix NO resuelve:**
+  `register.tsx` nunca precarga el `DailyRecord` ya guardado del día actual al abrir la pantalla —
+  cualquier campo no vuelto a tocar en un re-guardado del mismo día se pierde (patrón general del
+  archivo, no específico de este feature).~~ **Resuelto el 2026-07-23**, ver el bullet de arriba y
+  la undécima entrada de sesión (sección 6) para el detalle completo. Tests nuevos en
   `competitiveProfileEngine.test.ts` (4 casos: sin podios, por debajo del mínimo, disponible con
   vector correcto, historial vacío). Verificado en el navegador: la card "Resultado de
   competencia" aparece solo en Competitivo, guardar un podio hace que `home.tsx` muestre
@@ -963,6 +970,57 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   a mano). Próximo paso sugerido: Apple Health cuando el usuario resuelva cuenta/red, backend/proxy
   de IA (si decide levantar Firebase más adelante), o la limitación de precarga de `register.tsx`
   señalada en la ronda anterior.
+- **2026-07-23 (undécima entrada)** — El usuario preguntó primero por el estado del Índice de
+  Riesgo de Lesión (sin cambios de código, solo se confirmó el árbol de decisión de 4 niveles ya
+  vigente desde el 2026-07-21, gateado por dolor/molestia ≥3, con los umbrales de días/variables
+  documentados en sección 5 punto 8). Luego pidió seguir con "los puntos faltantes" — dado que el
+  backlog mezcla trabajo desbloqueado con piezas que dependen de una decisión de infraestructura
+  (Apple Health, backend/proxy de IA), se le preguntó primero cuál atacar en vez de asumir
+  (patrón ya confirmado en `feedback_autonomous_finish_requests`). Eligió la única pieza 100%
+  desbloqueada: la limitación de precarga de `register.tsx` señalada en la novena ronda
+  (2026-07-22).
+  - **Fix:** nuevo `getDailyRecordByDate(athleteId, date)` en `metricsRepository.ts` (reusa
+    `getDailyHistory` + `find`, misma fuente que `saveDailyRecord`/`getLatestDailyRecord`). El
+    `useEffect` de carga de `register.tsx` lo llama en paralelo con `getHealthBaseline`/
+    `getLiveHealthSnapshot`; si existe un registro de HOY, `applyTodayRecord` sobreescribe TODOS
+    los estados del formulario (microciclo, health incluido post-entreno/pre-sueño, subjetivo
+    completo, training/Borg, notas, y coach completo incluido `competitionResult`/
+    `competitionName`) — a propósito DESPUÉS del snapshot "live" de Health, para que el registro ya
+    confirmado de hoy gane sobre cualquier sync más reciente del Atajo (el registro guardado es la
+    fuente de verdad de lo que el atleta/entrenador ya confirmó).
+  - **Bug real encontrado por `code-reviewer` en el mismo cambio, corregido antes de cerrar:**
+    `handleSave` reconstruía el `DailyRecord` desde cero en cada guardado y no incluía
+    `atrState`/`dissonanceLabel`/`divergenceFcHrv` — campos que `useAtrToday.ts` calcula y persiste
+    cada vez que se abre `home.tsx`/`athlete.tsx`. Como `saveDailyRecord` reemplaza el registro
+    completo de esa fecha (no hace merge), re-guardar desde `register.tsx` después de haber
+    visitado home borraba esos tres campos en silencio — violación directa de CLAUDE.md §8
+    ("ninguna bandera de disonancia se descarta"), y exactamente el tipo de pérdida de datos que
+    este cambio buscaba resolver. Corregido con un nuevo estado `existingComputedFields`
+    (poblado en la precarga, spread-eado primero en `nextRecord` dentro de `handleSave`) — quedan
+    potencialmente desactualizados hasta la próxima visita a home/athlete, que ya los recalcula de
+    todas formas, pero nunca se pierden.
+  - **Hallazgo medio del mismo `code-reviewer`:** `metricsRepository.ts` no tenía ningún test
+    (cero archivos), pese a que CLAUDE.md §10.7 marca los repositorios de persistencia como
+    prioridad de test. Se agregó `metricsRepository.test.ts` (14 tests: upsert por fecha,
+    aislamiento entre atletas, `getDailyRecordByDate` vs. `getLatestDailyRecord` con casos que
+    los distinguen explícitamente, baseline, snapshot live, `clearAllMetrics`) usando el mock
+    oficial de `@react-native-async-storage/async-storage/jest/async-storage-mock` (primer uso de
+    `jest.mock` en el repo — `ts-jest` no hace hoisting automático como babel-jest, así que el
+    `jest.mock` debe ir literalmente antes que los imports en el archivo; documentado con
+    comentario y un `eslint-disable` puntual para no dejar warnings nuevos).
+  - **Verificado en el navegador real (Chrome vía CDP, no solo tests unitarios)** contra el perfil
+    ya existente en `AsyncStorage` (atleta "Julian garcia"): guardó FC/HRV/sueño/subjetivo desde
+    cero → visitó `/home` (confirmado que persiste `atrState`/`divergenceFcHrv` para el registro de
+    hoy) → reabrió `/register` (confirmó precarga exacta de los valores guardados) → agregó
+    post-entreno (62/80/120) y una nota compartible del entrenador SIN tocar los campos ya
+    guardados → re-guardó → inspeccionó `AsyncStorage` directamente: los datos viejos y los nuevos
+    conviven, y `atrState`/`divergenceFcHrv` sobrevivieron intactos (el escenario exacto del bug
+    corregido). Una tercera reapertura de `/register` confirmó que todo (incluida la nota del
+    entrenador) precarga correctamente. `npx tsc --noEmit`, `npm run lint` (0 warnings) y
+    `npm test` (122/122, 14 nuevos) limpios. Próximo paso sugerido: Apple Health cuando el usuario
+    resuelva cuenta/red, o backend/proxy de IA si decide levantar Firebase — el backlog ya no tiene
+    piezas triviales sueltas 100% desbloqueadas, lo que queda depende de una decisión externa del
+    usuario o del entrenador.
 
 ---
 
