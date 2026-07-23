@@ -529,6 +529,110 @@ describe('"Listo para competir" (informe de decisiones 2026-07-21)', () => {
     });
     expect(result.competitionReadiness).toBeUndefined();
   });
+
+  function mkPodiumRecord(date: string, restingHeartRate: number, hrv: number): DailyRecord {
+    return {
+      date,
+      athleteId: "athlete-1",
+      microcycle: "Competitivo",
+      health: { restingHeartRate, hrv },
+      subjective: { legFeeling: 9, techniqueQuality: 9, explosiveness: 9 },
+      training: {},
+      coach: { competitionResult: "podio", confidence: 9 },
+      savedAt: `${date}T00:00:00.000Z`,
+    };
+  }
+
+  test("con Perfil Competitivo Individual disponible (2026-07-22): un valor dentro del rango genérico pero lejos del perfil personalizado -> NO listo, usedPersonalizedProfile true", () => {
+    const podiumHistory = [
+      mkPodiumRecord("2026-01-01", 45, 115),
+      mkPodiumRecord("2026-01-02", 45, 115),
+      mkPodiumRecord("2026-01-03", 45, 115),
+    ];
+
+    // FC=49 tiene delta -2% (dentro del rango genérico -5% a 0%), pero está
+    // a más del 8% del promedio personalizado de 45 (49 vs 45 ≈ 8.9%).
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: { restingHeartRate: 49, hrv: 115 },
+      subjective: { legFeeling: 9, techniqueQuality: 9, explosiveness: 9, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+      history: podiumHistory,
+    });
+
+    expect(result.competitiveProfile?.available).toBe(true);
+    expect(result.competitiveProfile?.podiumCount).toBe(3);
+    expect(result.competitionReadiness?.usedPersonalizedProfile).toBe(true);
+    expect(result.competitionReadiness?.status).toBe("not_ready");
+    expect(
+      result.competitionReadiness?.failedMandatory.some((f) => f.includes("perfil competitivo personalizado"))
+    ).toBe(true);
+  });
+
+  test("con Perfil Competitivo Individual disponible: valores cercanos al perfil personalizado -> listo", () => {
+    const podiumHistory = [
+      mkPodiumRecord("2026-01-01", 45, 115),
+      mkPodiumRecord("2026-01-02", 45, 115),
+      mkPodiumRecord("2026-01-03", 45, 115),
+    ];
+
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: { restingHeartRate: 45, hrv: 115 },
+      subjective: { legFeeling: 9, techniqueQuality: 9, explosiveness: 9, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 9 },
+      history: podiumHistory,
+    });
+
+    expect(result.competitionReadiness?.status).toBe("ready");
+    expect(result.competitionReadiness?.usedPersonalizedProfile).toBe(true);
+  });
+
+  test("sin baseline pero con Perfil Competitivo Individual disponible: FC/HRV se evalúan contra el personalizado, no caen en 'no evaluable' (regresión de hallazgo de code-reviewer)", () => {
+    const podiumHistory = [
+      mkPodiumRecord("2026-01-01", 45, 115),
+      mkPodiumRecord("2026-01-02", 45, 115),
+      mkPodiumRecord("2026-01-03", 45, 115),
+    ];
+
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline: {}, // sin baseline -> fcDelta/hrvDelta quedan undefined
+      health: { restingHeartRate: 45, hrv: 115 },
+      subjective: { legFeeling: 9, techniqueQuality: 9, explosiveness: 9, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 9 },
+      history: podiumHistory,
+    });
+
+    // Antes del fix, esto caía en "not_evaluable" con FC/HRV en
+    // missingMandatory aunque el perfil personalizado sí tenía con qué
+    // decidir -- ahora debe evaluarse igual que con baseline presente.
+    expect(result.competitionReadiness?.status).toBe("ready");
+    expect(result.competitionReadiness?.missingMandatory).toHaveLength(0);
+  });
+
+  test("sin suficientes podios (menos de 3) -> sigue usando el rango genérico, no personalizado", () => {
+    const podiumHistory = [mkPodiumRecord("2026-01-01", 45, 115), mkPodiumRecord("2026-01-02", 45, 115)];
+
+    const result = evaluateATR({
+      microcycle: "Competitivo",
+      baseline,
+      health: readyHealth,
+      subjective: { legFeeling: 8, techniqueQuality: 8, explosiveness: 8, speedReaction: 8, motivation: 8 },
+      training: { borgCR10: 2 },
+      coach: { confidence: 8 },
+      history: podiumHistory,
+    });
+
+    expect(result.competitiveProfile?.available).toBe(false);
+    expect(result.competitionReadiness?.status).toBe("ready");
+    expect(result.competitionReadiness?.usedPersonalizedProfile).toBe(false);
+  });
 });
 
 describe("Índice de Confianza del Análisis", () => {

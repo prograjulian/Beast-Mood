@@ -87,6 +87,16 @@ export interface ReadinessEvaluation {
   failedMandatory: string[];
   missingMandatory: string[];
   supportingConcerns: string[];
+  /**
+   * true si al menos una variable obligatoria se evaluó contra el Perfil
+   * Competitivo Individual (Motor ATR §13) en vez del rango genérico de
+   * §1.6 -- ver evaluateCompetitionReadiness en atrEngine.ts. Variables sin
+   * target personalizado disponible (ej. pocos podios registraron esa
+   * variable) siguen usando el rango genérico como respaldo, así que un
+   * veredicto puede mezclar ambas fuentes -- este flag solo indica que
+   * hubo AL MENOS una comparación personalizada, no que todas lo fueron.
+   */
+  usedPersonalizedProfile: boolean;
 }
 
 /**
@@ -133,10 +143,11 @@ export interface PreviousDayComparison {
  * 2026-07-22 -- ver CLAUDE.md §9 para dónde vive el documento fuente y
  * src/engine/competitiveProfileEngine.ts para el cálculo). Vector de
  * referencia construido a partir de los mejores resultados históricos
- * reales del atleta (días de podio), NO reemplaza todavía el perfil
- * genérico del microciclo Competitivo dentro del veredicto "Listo para
- * competir" -- ver el comentario en competitiveProfileEngine.ts para el
- * alcance deliberadamente incompleto de esta primera implementación.
+ * reales del atleta (días de podio). Desde el 2026-07-22 SÍ reemplaza el
+ * rango genérico del microciclo Competitivo dentro del veredicto "Listo
+ * para competir" (`evaluateCompetitionReadiness` en atrEngine.ts),
+ * variable por variable cuando hay target personalizado disponible --
+ * ver `ReadinessEvaluation.usedPersonalizedProfile`.
  */
 export interface CompetitiveProfileVector {
   restingHeartRate?: number;
@@ -145,6 +156,7 @@ export interface CompetitiveProfileVector {
   legFeeling?: number;
   explosiveness?: number;
   confidence?: number;
+  techniqueQuality?: number;
 }
 
 export interface CompetitiveProfileResult {

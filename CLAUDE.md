@@ -77,10 +77,15 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-22 — Perfil Competitivo Individual (Motor ATR §13) implementado
-> (deliberadamente sin wirear todavía al veredicto "Listo para competir"): `competitiveProfileEngine
-> .ts`, captura de resultados de competencia en `register.tsx`, card informativa en `home.tsx`. Ver
-> la novena entrada de sesión 2026-07-22 en sección 6.
+> Última actualización: 2026-07-22 — el Perfil Competitivo Individual (novena ronda) queda
+> CONECTADO de verdad al veredicto "Listo para competir": `evaluateCompetitionReadiness` compara
+> variable por variable contra el perfil personalizado cuando está disponible, con tolerancia
+> provisional (±8%/±1 punto). `code-reviewer` encontró y se corrigió un bug real de gating
+> (FC/HRV exigían baseline aunque el personalizado no lo necesitaba). Ver la décima entrada de
+> sesión 2026-07-22 en sección 6.
+> Novena ronda (2026-07-22): Perfil Competitivo Individual implementado por primera vez
+> (deliberadamente sin wirear al veredicto todavía en ese momento): `competitiveProfileEngine.ts`,
+> captura de resultados de competencia en `register.tsx`, card informativa en `home.tsx`.
 > Octava ronda (2026-07-21/22): se encontraron los documentos maestro reales en disco
 > (`C:\Users\danic\Downloads\MotorcentralBeastM\`, ver sección 9) — hasta ahora las sesiones
 > trabajaban solo con el resumen de este archivo. Esto resolvió de verdad (no solo con un toggle)
@@ -382,20 +387,27 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
    se marca explícitamente pendiente de que el entrenador la confirme o pida la fórmula clásica de
    todas formas.
 7. ~~Cuántos resultados competitivos mínimos para que el Perfil Competitivo Individual tome
-   precedencia sobre el perfil genérico~~ **implementado el 2026-07-22, pero a propósito
-   INCOMPLETO** (Motor ATR sección 13). `src/engine/competitiveProfileEngine.ts`
-   (`evaluateCompetitiveProfile`) calcula el vector de referencia (FC/HRV/sueño/piernas/
+   precedencia sobre el perfil genérico~~ **implementado el 2026-07-22 y conectado de verdad al
+   veredicto** (Motor ATR sección 13). `src/engine/competitiveProfileEngine.ts`
+   (`evaluateCompetitiveProfile`) calcula el vector de referencia (FC/HRV/sueño/piernas/técnica/
    explosividad/confianza promediados de los días marcados como "podio") y el gate de historial
    insuficiente, con el mismo patrón honesto que Nivel 3. Umbral usado: 3 (el extremo más
    permisivo de la propuesta "3–5 podios" del documento, sin confirmar cuál específicamente —
-   provisional, documentado como tal en el código). **Lo que falta a propósito:** este perfil
-   personalizado NO reemplaza todavía el perfil genérico dentro de `evaluateCompetitionReadiness`
-   ("Listo para competir") — se muestra solo como información de contexto en `home.tsx`. Wirearlo
-   de verdad requiere decidir qué tolerancia usar alrededor del promedio personalizado y si las
-   variables obligatorias cambian, nada de eso está especificado — se dejó para una ronda futura
-   en vez de improvisarlo. Captura nueva en `register.tsx`: card "Resultado de competencia"
-   (podio/sin podio + nombre opcional) dentro de "Entrenador (uso del staff)", visible solo en
-   microciclo Competitivo, persistida en `CoachMetrics.competitionResult`/`competitionName`.
+   provisional, documentado como tal en el código). **Desde el 2026-07-22 (mismo día, ronda
+   siguiente): `evaluateCompetitionReadiness` SÍ compara contra el perfil personalizado** cuando
+   está disponible — variable por variable (FC, HRV, Piernas, Técnica obligatorias; Explosividad,
+   Confianza de apoyo), con tolerancia ±8% (fisiológicas) o ±1 punto (escalas 1–9) alrededor del
+   promedio personalizado en vez del rango/umbral genérico de §1.6. Ambas tolerancias son
+   provisionales, sin confirmar por el entrenador, documentadas como tales en el código. Si una
+   variable puntual no tiene target personalizado (pocos podios registraron ese dato), cae al
+   rango genérico como respaldo — nunca bloquea el veredicto por eso. `ReadinessEvaluation.
+   usedPersonalizedProfile` indica si se usó al menos una comparación personalizada.
+   `code-reviewer` encontró un bug real al revisar el wiring: el flag `present` de FC/HRV seguía
+   exigiendo `fcDelta`/`hrvDelta` (que requieren baseline) aunque el perfil personalizado ya podía
+   decidir con la lectura cruda del día — corregido, con test de regresión. Captura nueva en
+   `register.tsx`: card "Resultado de competencia" (podio/sin podio + nombre opcional) dentro de
+   "Entrenador (uso del staff)", visible solo en microciclo Competitivo, persistida en
+   `CoachMetrics.competitionResult`/`competitionName`.
 8. ~~Ponderación exacta de variables/categorías del Índice de Riesgo de Lesión (IRL) y umbrales
    numéricos entre Bajo/Moderado/Alto/Crítico~~ **resuelto el 2026-07-21** — árbol de decisión
    acumulativo en `src/engine/injuryRiskEngine.ts` (`evaluateInjuryRisk`). **Confirmado el
@@ -903,6 +915,37 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
   `tsc`/`eslint` limpios. Próximo paso sugerido: Apple Health/backend de IA cuando el usuario
   resuelva cuenta/red, o decidir si vale la pena precargar el registro del día en `register.tsx`
   (limitación general señalada arriba).
+- **2026-07-22 (décima ronda)** — El usuario pidió explícitamente conectar el Perfil Competitivo
+  Individual (ronda anterior, solo informativo) al veredicto real "Listo para competir", aclarando
+  antes que "el backend" se refería a seguir con la lógica del motor, NO a levantar Firebase (se
+  preguntó explícitamente para no asumir una decisión de infraestructura real). Se reescribió
+  `evaluateCompetitionReadiness` en `atrEngine.ts`: cuando el Perfil Competitivo está disponible,
+  cada variable obligatoria/de apoyo con target personalizado calculado (FC, HRV, Piernas, Técnica,
+  Explosividad, Confianza) se compara contra ESE target con tolerancia, en vez del rango/umbral
+  genérico de §1.6 — nueva función `isWithinPersonalizedTolerance` en `competitiveProfileEngine.ts`,
+  con dos constantes de tolerancia provisionales sin confirmar por el entrenador: ±8% para
+  variables fisiológicas (FC, HRV) y ±1 punto para escalas subjetivas 1-9 (documentado extensamente
+  en el código el porqué de esos números). Variables sin target personalizado disponible siguen
+  usando el respaldo genérico, nunca bloquean el veredicto por eso. Nuevo campo
+  `ReadinessEvaluation.usedPersonalizedProfile` para que la UI indique cuándo se usó.
+  `code-reviewer` (invocado proactivamente, el usuario había dado permiso explícito de usar más
+  subagentes si hacía falta) encontró un bug real: el flag `present` de los checks de FC/HRV
+  seguía exigiendo `fcDelta`/`hrvDelta` (que requieren baseline), aunque la comparación
+  personalizada usa la lectura cruda del día y NO necesita baseline — con perfil personalizado
+  disponible pero sin baseline, el veredicto caía en "no evaluable" en vez de decidir con el
+  personalizado, contradiciendo la regla de "nunca bloquear por falta de un dato que el otro
+  camino sí puede resolver". Corregido (`present: isNumber(fcDelta) || fcPersonalizedMet !==
+  undefined`, mismo patrón para HRV) con test de regresión. También se actualizó un comentario en
+  `atr.ts` que había quedado desactualizado por este mismo cambio (decía "no reemplaza todavía",
+  ya no es cierto). 4 tests nuevos en `atrEngine.test.ts` (valor dentro del rango genérico pero
+  fuera del personalizado → no listo; valor cercano al personalizado → listo; sin baseline pero
+  con perfil disponible → sigue evaluable, la regresión; menos de 3 podios → sigue en genérico).
+  108/108 tests totales, `tsc`/`eslint` limpios. Verificado en el navegador (sin crash con perfil
+  insuficiente 1/3 podios; la comparación de tolerancia en sí queda cubierta por los tests unitarios
+  porque `register.tsx` no permite crear múltiples días históricos distintos fácilmente para probarlo
+  a mano). Próximo paso sugerido: Apple Health cuando el usuario resuelva cuenta/red, backend/proxy
+  de IA (si decide levantar Firebase más adelante), o la limitación de precarga de `register.tsx`
+  señalada en la ronda anterior.
 
 ---
 

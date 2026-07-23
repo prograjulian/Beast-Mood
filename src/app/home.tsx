@@ -300,14 +300,23 @@ export default function HomeScreen() {
                 Puntos de atención: {atr.competitionReadiness.supportingConcerns.join(", ")}
               </Text>
             ) : null}
+            {atr.competitionReadiness.usedPersonalizedProfile ? (
+              <Text style={[styles.hint, { marginTop: 8, fontStyle: "italic" }]}>
+                Al menos una variable se evaluó contra tu Perfil Competitivo Individual (ver más
+                abajo), no contra el rango genérico.
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
         {/*
-          Perfil Competitivo Individual (Motor ATR §13) -- información de
-          contexto, todavía NO reemplaza el perfil genérico de arriba (ver
-          comentario en competitiveProfileEngine.ts sobre el alcance
-          incompleto a propósito de esta primera implementación).
+          Perfil Competitivo Individual (Motor ATR §13) -- desde el
+          2026-07-22, las variables con target personalizado disponible YA
+          se usan en el veredicto "Listo para competir" de arriba (en vez
+          del rango genérico de §1.6) -- ver competitiveProfileEngine.ts.
+          Esta card sigue mostrando el vector completo como referencia,
+          aunque no todas sus variables entren al veredicto (ej. sueño no
+          es parte de ninguna variable obligatoria/de apoyo hoy).
         */}
         {atr.competitiveProfile ? (
           <View style={styles.card}>
@@ -323,12 +332,15 @@ export default function HomeScreen() {
                   {formatNumber(atr.competitiveProfile.vector.sleepHours, " h")}
                 </Text>
                 <Text style={[styles.hint, { marginTop: 4 }]}>
-                  Piernas: {formatNumber(atr.competitiveProfile.vector.legFeeling)} · Explosividad:{" "}
+                  Piernas: {formatNumber(atr.competitiveProfile.vector.legFeeling)} · Técnica:{" "}
+                  {formatNumber(atr.competitiveProfile.vector.techniqueQuality)} · Explosividad:{" "}
                   {formatNumber(atr.competitiveProfile.vector.explosiveness)} · Confianza:{" "}
                   {formatNumber(atr.competitiveProfile.vector.confidence)}
                 </Text>
                 <Text style={[styles.hint, { marginTop: 8, fontStyle: "italic" }]}>
-                  Referencia informativa -- todavía no reemplaza el perfil genérico de §1.6 arriba.
+                  Ya en uso: FC, HRV, piernas, técnica (obligatorias), explosividad y confianza (de
+                  apoyo) del veredicto de arriba se comparan contra este perfil cuando hay dato
+                  disponible.
                 </Text>
               </>
             ) : (

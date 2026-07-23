@@ -2,6 +2,7 @@ import type {
   ATRInput,
   ATRInterpretation,
   ATRState,
+  CompetitiveProfileResult,
   ConfidenceLevel,
   Level2Result,
   Level3Result,
@@ -28,7 +29,12 @@ import {
   toFatigueAxis,
   withinRange,
 } from "./physiologicalRanges";
-import { evaluateCompetitiveProfile } from "./competitiveProfileEngine";
+import {
+  evaluateCompetitiveProfile,
+  isWithinPersonalizedTolerance,
+  PERSONALIZED_PHYSIOLOGICAL_TOLERANCE_PCT,
+  PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS,
+} from "./competitiveProfileEngine";
 import { evaluateInjuryRisk } from "./injuryRiskEngine";
 import { evaluatePostWorkoutTrend, observePostWorkoutRecovery } from "./postWorkoutEngine";
 
@@ -352,10 +358,13 @@ const READINESS_SUPPORTING_THRESHOLD = 6; // No dado explícitamente en el infor
 // coherente en todo el veredicto, en vez de inventar un número distinto.
 
 function evaluateCompetitionReadiness(
+  fcCurrent: number | undefined,
+  hrvCurrent: number | undefined,
   fcDelta: number | undefined,
   hrvDelta: number | undefined,
   subjective: SubjectiveMetrics | undefined,
-  coach: CoachMetrics | undefined
+  coach: CoachMetrics | undefined,
+  competitiveProfile: CompetitiveProfileResult | undefined
 ): ReadinessEvaluation {
   // Bloqueadoras: veto total, sin importar el resto (informe de decisiones,
   // mismos umbrales ya usados en isExcessiveFatigue/evaluateSupercompensation).
@@ -364,53 +373,151 @@ function evaluateCompetitionReadiness(
   if (isNumber(subjective?.fatigue) && subjective.fatigue >= 8) blockedBy.push("Fatiga (≥8)");
   if (isNumber(subjective?.discomfort) && subjective.discomfort >= 8) blockedBy.push("Molestia (≥8)");
   if (blockedBy.length > 0) {
-    return { status: "not_ready", blockedBy, failedMandatory: [], missingMandatory: [], supportingConcerns: [] };
+    return {
+      status: "not_ready",
+      blockedBy,
+      failedMandatory: [],
+      missingMandatory: [],
+      supportingConcerns: [],
+      usedPersonalizedProfile: false,
+    };
   }
 
+  // Perfil Competitivo Individual (Motor ATR §13) -- si está disponible,
+  // cada variable con target personalizado se evalúa contra ESE target en
+  // vez del rango genérico de §1.6. Variables sin target personalizado
+  // (pocos podios registraron ese dato puntual) caen al rango genérico como
+  // respaldo -- nunca se bloquea el veredicto por eso.
+  const vector = competitiveProfile?.available ? competitiveProfile.vector : undefined;
+  let usedPersonalizedProfile = false;
+
   const fcRange = getFcTargetRange("Competitivo");
+  const fcPersonalizedMet = isWithinPersonalizedTolerance(
+    fcCurrent,
+    vector?.restingHeartRate,
+    PERSONALIZED_PHYSIOLOGICAL_TOLERANCE_PCT,
+    "percent"
+  );
+  const hrvPersonalizedMet = isWithinPersonalizedTolerance(
+    hrvCurrent,
+    vector?.hrv,
+    PERSONALIZED_PHYSIOLOGICAL_TOLERANCE_PCT,
+    "percent"
+  );
+  const legFeelingPersonalizedMet = isWithinPersonalizedTolerance(
+    subjective?.legFeeling,
+    vector?.legFeeling,
+    PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS,
+    "points"
+  );
+  const techniquePersonalizedMet = isWithinPersonalizedTolerance(
+    subjective?.techniqueQuality,
+    vector?.techniqueQuality,
+    PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS,
+    "points"
+  );
+
+  if (fcPersonalizedMet !== undefined) usedPersonalizedProfile = true;
+  if (hrvPersonalizedMet !== undefined) usedPersonalizedProfile = true;
+  if (legFeelingPersonalizedMet !== undefined) usedPersonalizedProfile = true;
+  if (techniquePersonalizedMet !== undefined) usedPersonalizedProfile = true;
+
   const mandatory: CoherenceCheck[] = [
     {
-      label: "FC (dentro del rango esperado de Competitivo, §1.6)",
-      present: isNumber(fcDelta),
-      met: isNumber(fcDelta) && withinRange(fcDelta, fcRange),
+      label:
+        fcPersonalizedMet !== undefined
+          ? `FC (dentro de ±${PERSONALIZED_PHYSIOLOGICAL_TOLERANCE_PCT}% de tu perfil competitivo personalizado)`
+          : "FC (dentro del rango esperado de Competitivo, §1.6)",
+      // El check genérico necesita `fcDelta` (requiere baseline), pero el
+      // personalizado solo necesita la lectura cruda de hoy (`fcCurrent`) --
+      // si falta baseline pero SÍ hay perfil personalizado, el dato sigue
+      // "presente" (hallazgo de code-reviewer: antes esto caía en
+      // `missingMandatory` aunque el motor ya tenía con qué decidir).
+      present: isNumber(fcDelta) || fcPersonalizedMet !== undefined,
+      met: fcPersonalizedMet ?? (isNumber(fcDelta) && withinRange(fcDelta, fcRange)),
     },
     {
-      label: "HRV (+5% a +20% del baseline)",
-      present: isNumber(hrvDelta),
-      met: isNumber(hrvDelta) && hrvDelta >= 5 && hrvDelta <= 20,
+      label:
+        hrvPersonalizedMet !== undefined
+          ? `HRV (dentro de ±${PERSONALIZED_PHYSIOLOGICAL_TOLERANCE_PCT}% de tu perfil competitivo personalizado)`
+          : "HRV (+5% a +20% del baseline)",
+      present: isNumber(hrvDelta) || hrvPersonalizedMet !== undefined,
+      met: hrvPersonalizedMet ?? (isNumber(hrvDelta) && hrvDelta >= 5 && hrvDelta <= 20),
     },
     {
-      label: "Piernas (≥6, piso)",
+      label:
+        legFeelingPersonalizedMet !== undefined
+          ? `Piernas (dentro de ±${PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS} de tu perfil competitivo personalizado)`
+          : "Piernas (≥6, piso)",
       present: isNumber(subjective?.legFeeling),
-      met: isNumber(subjective?.legFeeling) && subjective!.legFeeling! >= 6,
+      met: legFeelingPersonalizedMet ?? (isNumber(subjective?.legFeeling) && subjective!.legFeeling! >= 6),
     },
     {
-      // Piso INDIVIDUAL, a propósito distinto del promedio ponderado de
-      // Capa 2 (getPerformanceDirection) -- evita que una técnica de 5/10
-      // aislada se declare "listo" solo porque el resto del promedio la
-      // compensa (caso sin resolver identificado en Preguntas
-      // Estructurales §1, ahora cerrado para este veredicto específico).
-      label: "Técnica (≥6, piso individual, no el promedio de Capa 2)",
+      // Piso INDIVIDUAL genérico, a propósito distinto del promedio
+      // ponderado de Capa 2 (getPerformanceDirection) -- evita que una
+      // técnica de 5/10 aislada se declare "listo" solo porque el resto
+      // del promedio la compensa (caso sin resolver identificado en
+      // Preguntas Estructurales §1, ahora cerrado para este veredicto
+      // específico). El perfil personalizado, cuando existe, reemplaza
+      // este piso fijo por el propio historial de podios del atleta.
+      label:
+        techniquePersonalizedMet !== undefined
+          ? `Técnica (dentro de ±${PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS} de tu perfil competitivo personalizado)`
+          : "Técnica (≥6, piso individual, no el promedio de Capa 2)",
       present: isNumber(subjective?.techniqueQuality),
-      met: isNumber(subjective?.techniqueQuality) && subjective!.techniqueQuality! >= 6,
+      met: techniquePersonalizedMet ?? (isNumber(subjective?.techniqueQuality) && subjective!.techniqueQuality! >= 6),
     },
   ];
 
   const missingMandatory = mandatory.filter((check) => !check.present).map((check) => check.label);
   if (missingMandatory.length > 0) {
-    return { status: "not_evaluable", blockedBy: [], failedMandatory: [], missingMandatory, supportingConcerns: [] };
+    return {
+      status: "not_evaluable",
+      blockedBy: [],
+      failedMandatory: [],
+      missingMandatory,
+      supportingConcerns: [],
+      usedPersonalizedProfile,
+    };
   }
 
   const failedMandatory = mandatory.filter((check) => !check.met).map((check) => check.label);
   if (failedMandatory.length > 0) {
-    return { status: "not_ready", blockedBy: [], failedMandatory, missingMandatory: [], supportingConcerns: [] };
+    return {
+      status: "not_ready",
+      blockedBy: [],
+      failedMandatory,
+      missingMandatory: [],
+      supportingConcerns: [],
+      usedPersonalizedProfile,
+    };
   }
+
+  const explosivenessPersonalizedMet = isWithinPersonalizedTolerance(
+    subjective?.explosiveness,
+    vector?.explosiveness,
+    PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS,
+    "points"
+  );
+  const confidencePersonalizedMet = isWithinPersonalizedTolerance(
+    coach?.confidence,
+    vector?.confidence,
+    PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS,
+    "points"
+  );
+  if (explosivenessPersonalizedMet !== undefined) usedPersonalizedProfile = true;
+  if (confidencePersonalizedMet !== undefined) usedPersonalizedProfile = true;
 
   const supporting: CoherenceCheck[] = [
     {
-      label: `Explosividad (≥${READINESS_SUPPORTING_THRESHOLD})`,
+      label:
+        explosivenessPersonalizedMet !== undefined
+          ? `Explosividad (dentro de ±${PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS} de tu perfil personalizado)`
+          : `Explosividad (≥${READINESS_SUPPORTING_THRESHOLD})`,
       present: isNumber(subjective?.explosiveness),
-      met: isNumber(subjective?.explosiveness) && subjective!.explosiveness! >= READINESS_SUPPORTING_THRESHOLD,
+      met:
+        explosivenessPersonalizedMet ??
+        (isNumber(subjective?.explosiveness) && subjective!.explosiveness! >= READINESS_SUPPORTING_THRESHOLD),
     },
     {
       label: `Velocidad/reacción (≥${READINESS_SUPPORTING_THRESHOLD})`,
@@ -422,9 +529,14 @@ function evaluateCompetitionReadiness(
       // SubjectiveMetrics (autoreporte del atleta) no tiene ese campo --
       // solo CoachMetrics.confidence existe en el modelo. Se usa esa fuente
       // explícitamente en vez de inventar un campo nuevo de atleta.
-      label: `Confianza (≥${READINESS_SUPPORTING_THRESHOLD}, reportada por el entrenador — no existe autoreporte del atleta en el modelo)`,
+      label:
+        confidencePersonalizedMet !== undefined
+          ? `Confianza (dentro de ±${PERSONALIZED_SUBJECTIVE_TOLERANCE_POINTS} de tu perfil personalizado, reportada por el entrenador)`
+          : `Confianza (≥${READINESS_SUPPORTING_THRESHOLD}, reportada por el entrenador — no existe autoreporte del atleta en el modelo)`,
       present: isNumber(coach?.confidence),
-      met: isNumber(coach?.confidence) && coach!.confidence! >= READINESS_SUPPORTING_THRESHOLD,
+      met:
+        confidencePersonalizedMet ??
+        (isNumber(coach?.confidence) && coach!.confidence! >= READINESS_SUPPORTING_THRESHOLD),
     },
     {
       label: `Motivación (≥${READINESS_SUPPORTING_THRESHOLD})`,
@@ -437,7 +549,14 @@ function evaluateCompetitionReadiness(
     .filter((check) => !check.present || !check.met)
     .map((check) => check.label);
 
-  return { status: "ready", blockedBy: [], failedMandatory: [], missingMandatory: [], supportingConcerns };
+  return {
+    status: "ready",
+    blockedBy: [],
+    failedMandatory: [],
+    missingMandatory: [],
+    supportingConcerns,
+    usedPersonalizedProfile,
+  };
 }
 
 // Bug A (informe de decisiones 2026-07-20): antes usaba umbrales fijos
@@ -984,6 +1103,15 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
 
   const level3 = history ? evaluateLevel3(history) : undefined;
 
+  // Perfil Competitivo Individual (Motor ATR §13) -- mismo gate que "Listo
+  // para competir": solo tiene sentido evaluarlo en el microciclo
+  // Competitivo. Se calcula ANTES de competitionReadiness porque este
+  // último lo consume (ver competitiveProfileEngine.ts para el alcance:
+  // reemplaza el rango genérico variable por variable cuando hay target
+  // personalizado disponible, cae al genérico cuando no).
+  const competitiveProfile =
+    microcycle === "Competitivo" && history ? evaluateCompetitiveProfile(history) : undefined;
+
   // "Listo para competir" (informe de decisiones 2026-07-21) -- solo se
   // evalúa en Competitivo, mismo gate que Supercompensación. Visibilidad
   // exclusiva del entrenador: se calcula siempre aquí (motor determinístico,
@@ -991,16 +1119,8 @@ export function evaluateATR(input: ATRInput): ATRInterpretation {
   // MUESTRA es responsabilidad de la UI (ver home.tsx).
   const competitionReadiness =
     microcycle === "Competitivo"
-      ? evaluateCompetitionReadiness(fcDelta, hrvDelta, subjective, coach)
+      ? evaluateCompetitionReadiness(fcCurrent, hrvCurrent, fcDelta, hrvDelta, subjective, coach, competitiveProfile)
       : undefined;
-
-  // Perfil Competitivo Individual (Motor ATR §13) -- mismo gate que "Listo
-  // para competir": solo tiene sentido evaluarlo en el microciclo
-  // Competitivo. Ver competitiveProfileEngine.ts para el alcance
-  // deliberadamente incompleto (todavía NO reemplaza el perfil genérico en
-  // competitionReadiness, es información de contexto).
-  const competitiveProfile =
-    microcycle === "Competitivo" && history ? evaluateCompetitiveProfile(history) : undefined;
 
   const confidenceLevel = computeConfidenceLevel(baseline, health, subjective, borg);
 
