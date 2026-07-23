@@ -252,8 +252,13 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       `evaluateLevel3` solo cuenta macrociclos completos y devuelve un mensaje honesto de
       "historial insuficiente" (mismo patrón que el arranque en frío del baseline, §1.8) — se
       decidió así en vez de inventar lógica de patrones sin datos reales para probarla contra.
-      Índice de Evolución ATR (§5.5) y Perfil Competitivo Individual (§13) siguen sin
-      implementar — dependen de macrociclos completos, mismo bloqueo que Nivel 3.
+      ~~Índice de Evolución ATR (§5.5) y Perfil Competitivo Individual (§13) siguen sin
+      implementar — dependen de macrociclos completos, mismo bloqueo que Nivel 3.~~ **Perfil
+      Competitivo Individual resuelto el 2026-07-22** (no dependía de macrociclos completos, solo
+      de podios registrados — ver sección 5 punto 7 y sección 6, rondas nueve/diez). Índice de
+      Evolución ATR sigue sin implementar, y a propósito: el documento fuente pide explícitamente
+      no inventar la fórmula sin validarla primero (ver sección 5 punto 6 de la lista de "lo que
+      falta definir" del Motor ATR).
 
 - [x] **Resuelto — historial real de registros diarios.** `metricsRepository.ts` fue reescrito:
       ya no guarda un único objeto por categoría, ahora acumula un array `DailyRecord[]` por
@@ -263,9 +268,11 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       duplicaba campos con nombres divergentes — `technicalQuality` vs `techniqueQuality`, etc.
       — y quedó eliminado). ~~`HealthBaseline` sigue siendo un valor único por atleta (no
       histórico) porque el tamaño de ventana móvil y el umbral de outliers todavía no están
-      confirmados por el entrenador~~ **la ventana móvil se resolvió el 2026-07-21** (7 días, ver
-      `src/engine/baselineEngine.ts` y la entrada de sesión correspondiente) — el umbral de
-      exclusión de outliers sigue sin confirmar (sección 5, punto 6). Se agregó
+      confirmados por el entrenador~~ **la ventana móvil se resolvió el 2026-07-21** (7 días) **y
+      la exclusión de outliers también, el mismo día** (mediana+MAD en vez de la fórmula clásica
+      de desviación estándar del documento, con el porqué documentado extensamente — ver
+      `src/engine/baselineEngine.ts` y sección 5 punto 6, sigue pendiente de que el entrenador
+      confirme el método). Se agregó
       `getLiveHealthSnapshot`/`saveLiveHealthSnapshot` como slot único explícito para el dato de
       Health "en vivo" del día en curso, antes de confirmarse como parte del historial (distinto
       del historial real, a propósito). Todo indexado por `athleteId` desde ahora (sección 8).
@@ -291,12 +298,19 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     y está ligado al roadmap de IA) — ver primer punto de esta sección.
   - ~~Estados oficiales (§0.1) no coinciden exactamente~~ **resuelto el 2026-07-16**, ver primer
     punto de esta sección.
-  - **Sigue sin implementar:** Índice de Evolución ATR (§5.5), Índice de Riesgo de Lesión / IRL
+  - ~~**Sigue sin implementar:** Índice de Evolución ATR (§5.5), Índice de Riesgo de Lesión / IRL
     (§11), Perfil Competitivo Individual (§13, esperable en esta fase — bloqueados por falta de
     macrociclos completos, igual que Nivel 3), modelo de recomendación explícito qué/por
     qué/qué hacer generalizado a los 5 estados (§10.1, hoy solo resuelto conceptualmente para
     fatiga excesiva en el documento, no como plantilla de texto en código), Capa 4 — entrenador
-    (§6, ni `CoachMetrics` tiene pantalla que lo capture todavía).
+    (§6, ni `CoachMetrics` tiene pantalla que lo capture todavía).~~ **Snapshot del 2026-07-08,
+    desactualizado — estado real a esta fecha (2026-07-22):** IRL resuelto (2026-07-21, ver
+    primer punto de esta sección); Perfil Competitivo Individual resuelto y conectado al veredicto
+    (2026-07-22, sección 5 punto 7); modelo de recomendación generalizado resuelto como paso 1
+    determinístico (`explanationEngine.ts`, segunda ronda 2026-07-21); Capa 4 — entrenador tiene
+    pantalla de captura desde la cuarta ronda 2026-07-21 (`register.tsx`, card "Entrenador"). Solo
+    Índice de Evolución ATR (§5.5) sigue sin implementar, a propósito (ver nota más abajo, primer
+    punto de esta sección).
 - [x] ~~Hallazgo crítico — violación del principio "no negociable" de persistencia longitudinal~~
       **resuelto el 2026-07-16**, ver primer punto de esta sección para el detalle.
 - [x] Integración Apple Health nativa (`src/services/health/*.ts`: appleHealth, healthConnect,
@@ -330,8 +344,9 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
       no de permisos — pero ya no depende de un toggle manual ni de acordarse de excluir una card.
 - [x] ~~`CoachMetrics` existe como modelo (guardado/leído) pero ninguna pantalla lo captura
       todavía~~ **resuelto el 2026-07-21** — se captura en una card dedicada dentro de
-      `register.tsx` ("Entrenador (uso del staff)"). Sigue sin existir una pantalla SEPARADA para
-      el entrenador (eso es la separación de dashboards, bullet de arriba, un gap distinto).
+      `register.tsx` ("Entrenador (uso del staff)"). ~~Sigue sin existir una pantalla SEPARADA para
+      el entrenador~~ **también resuelta el 2026-07-22** — `home.tsx` es esa pantalla separada
+      desde el bullet de arriba (separación de dashboards).
 - [ ] No existe "procedencia del dato" (medido/reportado/ausente). ~~Índice de Confianza del
       Análisis~~ **implementado el 2026-07-21**, ver sección 5.
 - [x] ~~No hay mensaje de arranque en frío (§1.8) cuando falta baseline~~ **resuelto el 2026-07-21**
@@ -466,11 +481,13 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     - **"Subcompensado" descartado** — confirmación sin acción de código, sigue sin agregarse.
     - **"Sensación general" = variables ya existentes** — sin acción de código, restricción
       respetada (no se crearon campos duplicados).
-    - **"Listo para competir" nunca visible al atleta** -- ~~solo comentado en código~~ **aplicado**:
-      `home.tsx` gana un toggle "Vista Entrenador / Vista Atleta" (`viewMode`) que oculta la card
-      en modo Atleta. Es un filtro de PRESENTACIÓN, no una separación real de dashboards ni un
-      límite de seguridad (sigue sin auth/roles, fase single-user) -- ver también el gap de
-      sección 4 ("separación Dashboard Atleta/Entrenador").
+    - **"Listo para competir" nunca visible al atleta** -- ~~solo comentado en código~~ ~~aplicado
+      con un toggle "Vista Entrenador/Atleta" sobre home.tsx~~ **resuelto de verdad el 2026-07-22**:
+      ese toggle se quitó — `src/app/athlete.tsx` es ahora una ruta separada que directamente NUNCA
+      lee `atr.competitionReadiness` (ni ningún otro dato coach-only), y `home.tsx` quedó como vista
+      entrenador pura. Doble barrera con `explanationEngine.ts`, que además excluye `readiness` del
+      payload cuando `audience==="athlete"`. Sigue sin ser un límite de seguridad real (sin
+      auth/roles, fase single-user) — es separación de rutas/contenido, no de permisos.
     - **"Entrenador IA" — spec recibida el 2026-07-21 (quinta interacción del día), NO
       implementada todavía.** El usuario confirmó qué es: chat conversacional para el atleta,
       mismo motor de explicación (Capa 2, ya implementado en `explanationEngine.ts`) pero en
