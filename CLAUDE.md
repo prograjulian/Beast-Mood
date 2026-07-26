@@ -77,7 +77,18 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
 
 ## 4. Estado actual del proyecto (ACTUALIZAR EN CADA SESIÓN)
 
-> Última actualización: 2026-07-23 — resuelta la limitación de precarga de `register.tsx` señalada
+> Última actualización: 2026-07-25 — intento de retomar Apple Health/Atajo de iOS bloqueado de
+> nuevo, esta vez por una causa distinta a la de la séptima ronda (2026-07-21, ya resuelta): Apple
+> lleva desde mayo de 2026 sin aprobar en el App Store versiones nuevas de Expo Go (SDK 55 y 56
+> atascadas en revisión, sin fecha pública) — el usuario solo puede instalar Expo Go 54.0.2, que no
+> es compatible con este proyecto (Expo SDK 56). La alternativa oficial (`eas go`/TestFlight)
+> confirmada por búsqueda que SÍ requiere la cuenta de Apple Developer paga ($99/año) — el mismo
+> bloqueo de siempre (sección 4, séptima ronda 2026-07-21; sección 5), no una vía nueva para
+> evitarlo. El usuario, dado a elegir entre bajar el proyecto a SDK 54 (downgrade real de
+> dependencias, sin costo pero riesgoso), pagar la cuenta Developer, o esperar, **eligió esperar a
+> que Apple apruebe la versión nueva** — sin cambios de código en esta sesión. Ver la duodécima
+> entrada de sesión 2026-07-25 en sección 6.
+> 2026-07-23 — resuelta la limitación de precarga de `register.tsx` señalada
 > en la novena ronda (2026-07-22): la pantalla ahora precarga el `DailyRecord` ya guardado de HOY
 > (si existe) sobre el snapshot "live" de Health, así que reabrir o re-guardar la pantalla el mismo
 > día ya no pierde campos no vueltos a tocar. `code-reviewer` encontró un bug real en el mismo
@@ -1021,6 +1032,41 @@ el baseline propio del atleta y el perfil esperado de su microciclo actual.
     resuelva cuenta/red, o backend/proxy de IA si decide levantar Firebase — el backlog ya no tiene
     piezas triviales sueltas 100% desbloqueadas, lo que queda depende de una decisión externa del
     usuario o del entrenador.
+- **2026-07-25 (duodécima entrada)** — El usuario pidió retomar Apple Health/Atajo de iOS (la vez
+  pasada, séptima ronda 2026-07-21, había fallado porque el iPhone estaba en la red de la
+  universidad, distinta de donde corría `expo start`). Se confirmó con el usuario que ahora sí
+  puede poner el iPhone en la misma WiFi que la PC (`192.168.1.43`) y se levantó
+  `npx expo start --lan` para conectar por Expo Go. Antes de eso, se evaluó instalar
+  `@expo/ngrok` para un túnel (por si hacía falta) — se instaló, se corrió `npm audit`, y se
+  encontró que agrega 27 vulnerabilidades "high" (paquete de túnel viejo, sin mantenimiento
+  activo) — **revertido inmediatamente** (`git checkout -- package.json package-lock.json`) sin
+  llegar a necesitarlo, por la regla de seguridad de CLAUDE.md §10.2/§10.9 de no introducir riesgo
+  sin justificación real. Se armaron instrucciones completas para crear el Atajo de iOS desde cero
+  (Shortcuts: `Find Health Samples Where` para FC en reposo y HRV, `Get Details of Health Sample`
+  para extraer el número, `Text` para armar la URL, `Open URLs` para abrir el deep link) — dadas en
+  el chat, no se guardaron en este archivo (mismo patrón que la séptima ronda).
+  **Bloqueador nuevo encontrado al intentar conectar:** el usuario solo puede instalar Expo Go
+  54.0.2 desde el App Store. Investigado con `WebSearch`/`WebFetch` (no asumido): desde mayo de
+  2026, Apple no ha aprobado en el App Store ninguna versión nueva de Expo Go — SDK 55 y luego
+  SDK 56 quedaron atascados en revisión, sin fecha pública ("Expo Go and the App Store in May
+  2026", expo.dev/changelog). No es un problema del dispositivo del usuario, es un bloqueo
+  general de Apple que afecta a cualquiera tratando de usar Expo Go con un proyecto en SDK 55/56
+  hoy. Este proyecto está en Expo SDK 56 (`package.json`), así que Expo Go 54.0.2 no es compatible
+  y rechazaría el proyecto igual aunque se lograra conectar. Se investigó la alternativa oficial de
+  Expo (`eas go` → despliega una build de Expo Go SDK 56 a un equipo interno de TestFlight) — se
+  confirmó por búsqueda que **también requiere la cuenta de Apple Developer paga ($99/año)**, el
+  mismo bloqueo ya documentado desde la séptima ronda (2026-07-21) para HealthKit nativo — `eas go`
+  no es una vía nueva para evitarlo, pasa por el mismo requisito.
+  Se presentaron tres caminos reales al usuario (bajar el proyecto a SDK 54 sin costo pero con
+  riesgo real de romper dependencias; pagar la cuenta Developer para `eas go`/TestFlight; esperar a
+  que Apple apruebe SDK 56) siguiendo el patrón ya confirmado de no decidir una cuestión de
+  infraestructura/costo en nombre del usuario (ver memoria de sesión
+  `feedback_autonomous_finish_requests`). **El usuario eligió esperar a Apple.** Sin cambios de
+  código en esta sesión — se detuvo el servidor `expo start --lan` que se había levantado. Próximo
+  paso sugerido: retomar el resto del backlog (backend/proxy de IA, revisión de tolerancias con el
+  entrenador) mientras se espera la aprobación de Apple; volver a intentar el Atajo apenas Expo Go
+  SDK 55/56 esté disponible en el App Store (sin fecha conocida) o si el usuario cambia de opinión
+  sobre las otras dos vías.
 
 ---
 
